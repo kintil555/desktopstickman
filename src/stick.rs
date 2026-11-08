@@ -413,17 +413,6 @@ impl Canvas {
         });
     }
 
-    /// Bayangan elips di lantai (mengecil saat melompat).
-    pub fn shadow(&mut self, c: V, k: f32) {
-        let (rx, ry) = (14.0 * k, 3.0 * k);
-        let lo = v(c.x - rx, c.y - ry);
-        let hi = v(c.x + rx, c.y + ry);
-        self.fill(lo, hi, 0x4000_0000, |p| {
-            let (dx, dy) = ((p.x - c.x) / rx, (p.y - c.y) / ry);
-            dx * dx + dy * dy <= 1.0
-        });
-    }
-
     /// Gambar sosok; `o` = titik pijak lantai (px kanvas).
     pub fn draw(&mut self, q: &Pose, o: V, cfg: &Config) {
         let (cf, cb) = (pack(cfg.color_f), pack(cfg.color_b));
