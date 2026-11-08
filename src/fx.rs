@@ -128,7 +128,7 @@ pub fn spawn_land(l: &mut Vec<Dust>, x: f32, k: f32, rng: &mut Rng) {
             d.vx = dir * lerp(30.0, 300.0, ks) * f * (0.9 + rng.f() * 0.2);
             d.dm = 3.4 + i as f32 * 0.8;
             d.r1 = lerp(1.1, 9.1, ks) * f;
-            d.sd = rng.f() * 6.283;
+            d.sd = rng.f() * std::f32::consts::TAU;
             d.spin = 7.0 + rng.f() * 3.0;
             l.push(d);
         }
