@@ -1,11 +1,14 @@
 mod config;
 mod fx;
+mod panel;
+mod present;
 mod stick;
 mod veh;
+#[cfg(windows)]
+mod winalpha;
 
 use config::Config;
 use std::{
-    num::NonZeroU32,
     sync::Arc,
     time::{Duration, Instant},
 };
@@ -107,19 +110,14 @@ fn overlay() {
             .with_title("desktopstickman")
             .with_inner_size(PhysicalSize::new(WIN_W, WIN_H))
             .with_decorations(false)
-            .with_transparent(true)
+            .with_transparent(cfg!(not(windows)))
             .with_resizable(false)
             .with_window_level(WindowLevel::AlwaysOnTop)
             .build(&el)
             .expect("window"),
     );
     let _ = win.set_cursor_hittest(false);
-    let ctx = softbuffer::Context::new(win.clone()).expect("ctx");
-    let mut surf = softbuffer::Surface::new(&ctx, win.clone()).expect("surface");
-    let _ = surf.resize(
-        NonZeroU32::new(WIN_W).unwrap_or(NonZeroU32::MIN),
-        NonZeroU32::new(WIN_H).unwrap_or(NonZeroU32::MIN),
-    );
+    let mut out = present::Presenter::new(&win, WIN_W, WIN_H);
 
     let (mon_pos, mon_size) = win
         .primary_monitor()
@@ -160,20 +158,11 @@ fn overlay() {
                 }
                 s.update(dt, &cfg, &mut rng, max_x, max_alt);
                 let floor_y = mon_pos.y + mon_size.height as i32 - cfg.floor_offset;
-                win.set_outer_position(PhysicalPosition::new(
+                let pos = PhysicalPosition::new(
                     mon_pos.x + s.x as i32 - WIN_W as i32 / 2,
                     floor_y - FEET_Y as i32 - s.alt as i32,
-                ));
-                let c = render(&s, &cfg);
-                if let Ok(mut buf) = surf.buffer_mut() {
-                    let cell = cfg.cell as usize;
-                    for (y, row) in buf.chunks_mut(WIN_W as usize).enumerate() {
-                        for (x, px) in row.iter_mut().enumerate() {
-                            *px = c.px.get((y / cell) * c.w + x / cell).copied().unwrap_or(0);
-                        }
-                    }
-                    let _ = buf.present();
-                }
+                );
+                out.present(&render(&s, &cfg), cfg.cell as usize, pos);
             }
             _ => {}
         },
@@ -188,7 +177,7 @@ fn main() {
             args.get(2).map_or("dump.ppm", String::as_str),
             args.get(3).is_some_and(|a| a == "fly"),
         ),
-        // TODO: tanpa argumen = panel Slint (lihat NOTES.md); sementara jalankan overlay.
-        _ => overlay(),
+        Some("--overlay") => overlay(),
+        _ => panel::run(),
     }
 }

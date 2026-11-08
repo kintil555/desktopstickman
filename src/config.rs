@@ -1,9 +1,9 @@
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use std::{fs, time::SystemTime};
 
 pub const PATH: &str = "desktopstickman.json";
 
-#[derive(Deserialize, Clone, Debug)]
+#[derive(Serialize, Deserialize, Clone, Debug)]
 #[serde(default)]
 pub struct Config {
     /// Ukuran sel piksel (px layar per sel).
@@ -18,6 +18,8 @@ pub struct Config {
     pub run: bool,
     pub fly: bool,
     pub dust: bool,
+    pub sound: bool,
+    pub volume: f32,
 }
 
 impl Default for Config {
@@ -32,6 +34,8 @@ impl Default for Config {
             run: true,
             fly: true,
             dust: true,
+            sound: true,
+            volume: 0.6,
         }
     }
 }
@@ -44,10 +48,30 @@ impl Config {
             .unwrap_or_default();
         c.cell = c.cell.clamp(1, 8);
         c.speed = c.speed.clamp(0.1, 3.0);
+        c.volume = c.volume.clamp(0.0, 1.0);
         c
+    }
+
+    pub fn save(&self) {
+        if let Ok(s) = serde_json::to_string_pretty(self) {
+            let _ = fs::write(PATH, s);
+        }
     }
 
     pub fn mtime() -> Option<SystemTime> {
         fs::metadata(PATH).and_then(|m| m.modified()).ok()
     }
+}
+
+pub fn to_hex(c: [u8; 3]) -> String {
+    format!("#{:02X}{:02X}{:02X}", c[0], c[1], c[2])
+}
+
+pub fn parse_hex(s: &str) -> Option<[u8; 3]> {
+    let h = s.trim().trim_start_matches('#');
+    if h.len() != 6 || !h.is_ascii() {
+        return None;
+    }
+    let v = u32::from_str_radix(h, 16).ok()?;
+    Some([(v >> 16) as u8, (v >> 8) as u8, v as u8])
 }

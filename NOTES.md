@@ -3,7 +3,8 @@
 ## Status
 Milestone 1 selesai: overlay winit+softbuffer (src/main.rs), gait IK + rasterizer sel (src/stick.rs), config JSON `desktopstickman.json` (src/config.rs), state Idle/Walk/Run + lompat acak. Tes visual headless: `desktopstickman --dump out.ppm`.
 Milestone 2 (DITULIS TAPI BELUM DI-BUILD/TES, cek `cargo build` + `--dump` dulu): debu (src/fx.rs: puff lari + burst mendarat), kendaraan terbang (src/veh.rs; sprite assets/*.rgba = RGBA mentah 59x59 dari PNG; flame prosedural; pemain duduk di-clip), state terbang di src/stick.rs (Fly::Up/Cruise/Down, jendela naik mengikuti `alt`). Tanpa tilt/asap/glow kendaraan.
-**Belum:** Windows alpha per-piksel (softbuffer, belum diuji; fallback UpdateLayeredWindow), panel Slint, audio (rodio, fitur `audio`), tilt/asap/glow kendaraan, tooltip/quit (jendela click-through; berhenti via kill proses). clippy belum dijalankan lokal.
+Milestone 3 (JUGA BELUM DI-BUILD/TES): panel Slint (ui/panel.slint, src/panel.rs; tanpa argumen = panel, `--overlay` = overlay; Start/Stop = spawn/kill child, config disimpan ke desktopstickman.json saat slider dilepas/checkbox diubah), alpha per-piksel Windows (src/winalpha.rs: layered window + UpdateLayeredWindow, dipakai via src/present.rs; non-Windows tetap softbuffer). Config baru: sound, volume (belum dipakai; audio belum ada).
+**Belum:** audio (rodio, fitur `audio`), tilt/asap/glow kendaraan, tooltip/quit (jendela click-through; berhenti via kill proses). clippy belum dijalankan lokal.
 
 ## Rencana (keputusan sudah diambil)
 - Overlay: `winit` + `softbuffer`, jendela kecil (~320x160px) transparan, tanpa dekorasi, always-on-top, `set_cursor_hittest(false)`; jendela dipindah mengikuti stickman. Catatan: softbuffer di Windows mungkin tak mendukung alpha per-piksel; cek, kalau gagal pakai UpdateLayeredWindow.

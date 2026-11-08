@@ -1,0 +1,73 @@
+import { Button, Slider, CheckBox, LineEdit, VerticalBox, HorizontalBox } from "std-widgets.slint";
+
+export component Panel inherits Window {
+    title: "desktopstickman";
+    preferred-width: 340px;
+    in-out property <bool> running: false;
+    in-out property <float> speed: 1.0;
+    in-out property <float> cell: 2;
+    in-out property <float> floor-offset: 48;
+    in-out property <float> volume: 0.6;
+    in-out property <bool> jump: true;
+    in-out property <bool> run: true;
+    in-out property <bool> fly: true;
+    in-out property <bool> dust: true;
+    in-out property <bool> sound: true;
+    in-out property <string> color-f: "#EE7A1C";
+    in-out property <string> color-b: "#B8541A";
+    callback toggle();
+    callback changed();
+
+    VerticalBox {
+        spacing: 6px;
+        Button {
+            text: root.running ? "Stop" : "Start";
+            clicked => { root.toggle(); }
+        }
+        Text { text: "Kecepatan: " + Math.round(root.speed * 10) / 10; }
+        Slider {
+            minimum: 0.1;
+            maximum: 3;
+            value <=> root.speed;
+            released(v) => { root.changed(); }
+        }
+        Text { text: "Skala sel (px): " + Math.round(root.cell); }
+        Slider {
+            minimum: 1;
+            maximum: 8;
+            value <=> root.cell;
+            released(v) => { root.changed(); }
+        }
+        Text { text: "Offset lantai/taskbar (px): " + Math.round(root.floor-offset); }
+        Slider {
+            minimum: 0;
+            maximum: 200;
+            value <=> root.floor-offset;
+            released(v) => { root.changed(); }
+        }
+        Text { text: "Volume: " + Math.round(root.volume * 100) + "%"; }
+        Slider {
+            minimum: 0;
+            maximum: 1;
+            value <=> root.volume;
+            released(v) => { root.changed(); }
+        }
+        HorizontalBox {
+            CheckBox { text: "Lompat"; checked <=> root.jump; toggled => { root.changed(); } }
+            CheckBox { text: "Lari"; checked <=> root.run; toggled => { root.changed(); } }
+            CheckBox { text: "Terbang"; checked <=> root.fly; toggled => { root.changed(); } }
+        }
+        HorizontalBox {
+            CheckBox { text: "Debu"; checked <=> root.dust; toggled => { root.changed(); } }
+            CheckBox { text: "Suara"; checked <=> root.sound; toggled => { root.changed(); } }
+        }
+        HorizontalBox {
+            Text { text: "Warna depan"; vertical-alignment: center; }
+            LineEdit { text <=> root.color-f; accepted(t) => { root.changed(); } }
+        }
+        HorizontalBox {
+            Text { text: "Warna belakang"; vertical-alignment: center; }
+            LineEdit { text <=> root.color-b; accepted(t) => { root.changed(); } }
+        }
+    }
+}
