@@ -2,7 +2,7 @@
 //! saat panel ditutup; Start/Stop lewat pid file.
 use crate::{
     config::{self, Anim, Config},
-    sys,
+    sys, tray,
 };
 use slint::{Color, ComponentHandle, Image, Rgba8Pixel, SharedPixelBuffer};
 
@@ -285,15 +285,43 @@ pub fn run() {
             }
         }
     });
-    ui.on_quit_panel({
-        let w = ui.as_weak();
-        move || {
-            if let Some(ui) = w.upgrade() {
-                let _ = ui.hide();
-            }
-        }
+    ui.on_quit_panel(|| {
+        let _ = slint::quit_event_loop();
     });
-    let _ = ui.run();
+    ui.window().on_close_requested(|| {
+        let _ = slint::quit_event_loop();
+        slint::CloseRequestResponse::HideWindow
+    });
+    // minimize -> sembunyikan ke tray (ikon tray hanya aktif bila tersedia, mis. Windows)
+    let tray_rx = tray::install();
+    let timer = slint::Timer::default();
+    if let Some(rx) = tray_rx {
+        let w = ui.as_weak();
+        timer.start(
+            slint::TimerMode::Repeated,
+            std::time::Duration::from_millis(150),
+            move || {
+                let Some(ui) = w.upgrade() else { return };
+                while let Ok(e) = rx.try_recv() {
+                    match e {
+                        tray::Ev::Show => {
+                            let _ = ui.show();
+                            ui.window().set_minimized(false);
+                        }
+                        tray::Ev::Quit => {
+                            let _ = slint::quit_event_loop();
+                        }
+                    }
+                }
+                if ui.window().is_minimized() {
+                    let _ = ui.hide();
+                }
+            },
+        );
+    }
+    let _ = ui.show();
+    let _ = slint::run_event_loop_until_quit();
+    tray::remove();
     if !Config::load().bg_on_close {
         sys::stop_overlay();
     }

@@ -9,6 +9,7 @@ mod shadow;
 mod skin;
 mod stick;
 mod sys;
+mod tray;
 mod veh;
 #[cfg(windows)]
 mod winalpha;
@@ -145,17 +146,17 @@ fn overlay() {
     let mut sheet = load_sheet(&cfg);
     let mut cfg_mtime = Config::mtime();
     let el = EventLoop::new().expect("event loop");
-    let win = Arc::new(
-        WindowBuilder::new()
-            .with_title("desktopstickman")
-            .with_inner_size(PhysicalSize::new(WIN_W, WIN_H))
-            .with_decorations(false)
-            .with_transparent(cfg!(not(windows)))
-            .with_resizable(false)
-            .with_window_level(WindowLevel::AlwaysOnTop)
-            .build(&el)
-            .expect("window"),
-    );
+    let wb = WindowBuilder::new()
+        .with_title("desktopstickman")
+        .with_inner_size(PhysicalSize::new(WIN_W, WIN_H))
+        .with_decorations(false)
+        .with_transparent(cfg!(not(windows)))
+        .with_resizable(false)
+        .with_window_level(WindowLevel::AlwaysOnTop);
+    // tanpa tombol di taskbar sejak dibuat (WS_EX_TOOLWINDOW setelah tampil tidak cukup)
+    #[cfg(windows)]
+    let wb = winit::platform::windows::WindowBuilderExtWindows::with_skip_taskbar(wb, true);
+    let win = Arc::new(wb.build(&el).expect("window"));
     let _ = win.set_cursor_hittest(false);
     let mut out = present::Presenter::new(&win, WIN_W, WIN_H);
 
