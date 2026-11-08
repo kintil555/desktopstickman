@@ -186,3 +186,39 @@ pub fn cursor() -> Option<(i32, i32, bool, bool)> {
     #[cfg(not(windows))]
     None
 }
+
+/// Kode tombol virtual dari nama: A-Z, 0-9, F1-F12, Space, Tab, Home, End, Insert, Delete, PageUp, PageDown.
+pub fn vk(name: &str) -> Option<u32> {
+    let n = name.trim().to_ascii_uppercase();
+    let b = n.as_bytes();
+    match n.as_str() {
+        "SPACE" => Some(0x20),
+        "TAB" => Some(0x09),
+        "INSERT" => Some(0x2D),
+        "DELETE" => Some(0x2E),
+        "HOME" => Some(0x24),
+        "END" => Some(0x23),
+        "PAGEUP" => Some(0x21),
+        "PAGEDOWN" => Some(0x22),
+        _ if b.len() == 1 && b[0].is_ascii_alphanumeric() => Some(b[0] as u32),
+        _ => n
+            .strip_prefix('F')
+            .and_then(|d| d.parse::<u32>().ok())
+            .filter(|d| (1..=12).contains(d))
+            .map(|d| 0x6F + d),
+    }
+}
+
+/// Tombol sedang ditekan (global, tanpa fokus). Hanya Windows.
+pub fn key_down(vk: u32) -> bool {
+    #[cfg(windows)]
+    // SAFETY: panggilan Win32 tanpa pointer.
+    unsafe {
+        windows_sys::Win32::UI::Input::KeyboardAndMouse::GetAsyncKeyState(vk as i32) < 0
+    }
+    #[cfg(not(windows))]
+    {
+        let _ = vk;
+        false
+    }
+}

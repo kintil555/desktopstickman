@@ -72,6 +72,53 @@ impl Default for Skin {
     }
 }
 
+/// Bentuk sosok prosedural (tab Model di panel).
+#[derive(Serialize, Deserialize, Clone, Debug)]
+#[serde(default)]
+pub struct Body {
+    /// Kepala terisi penuh (bukan cincin kosong).
+    pub head_fill: bool,
+    pub head_size: f32,
+    /// Tebal garis = setengah lebar, px kanvas.
+    pub head_w: f32,
+    pub limb_w: f32,
+    pub torso_w: f32,
+    pub outline: bool,
+    pub outline_color: [u8; 3],
+    pub shade: bool,
+    /// Kekuatan highlight/shadow 0..2.
+    pub shade_k: f32,
+    /// Terang warna anggota badan belakang relatif warna depan.
+    pub back_k: f32,
+}
+
+impl Default for Body {
+    fn default() -> Self {
+        Self {
+            head_fill: false,
+            head_size: 1.0,
+            head_w: 2.0,
+            limb_w: 2.0,
+            torso_w: 2.0,
+            outline: true,
+            outline_color: [40, 20, 10],
+            shade: true,
+            shade_k: 1.0,
+            back_k: 0.75,
+        }
+    }
+}
+
+/// Tombol pintas global (Windows). Nama tombol, kosong = nonaktif.
+#[derive(Serialize, Deserialize, Clone, Debug, Default)]
+#[serde(default)]
+pub struct Keys {
+    pub hang: String,
+    pub jump: String,
+    pub fly: String,
+    pub hide: String,
+}
+
 #[derive(Serialize, Deserialize, Clone, Debug)]
 #[serde(default)]
 pub struct Config {
@@ -107,6 +154,8 @@ pub struct Config {
     /// Overlay tetap jalan setelah panel ditutup.
     pub bg_on_close: bool,
     pub skin: Skin,
+    pub body: Body,
+    pub keys: Keys,
 }
 
 impl Default for Config {
@@ -133,6 +182,8 @@ impl Default for Config {
             startup_delay: 30,
             bg_on_close: true,
             skin: Skin::default(),
+            body: Body::default(),
+            keys: Keys::default(),
         }
     }
 }
@@ -156,6 +207,24 @@ impl Config {
         self.shadow_dy = self.shadow_dy.clamp(-32, 32);
         self.shadow_blur = self.shadow_blur.min(4);
         self.startup_delay = self.startup_delay.min(600);
+        let b = &mut self.body;
+        b.head_size = b.head_size.clamp(0.5, 2.0);
+        b.head_w = b.head_w.clamp(1.0, 6.0);
+        b.limb_w = b.limb_w.clamp(1.0, 6.0);
+        b.torso_w = b.torso_w.clamp(1.0, 6.0);
+        b.shade_k = b.shade_k.clamp(0.0, 2.0);
+        b.back_k = b.back_k.clamp(0.3, 1.0);
+        for k in [
+            &mut self.keys.hang,
+            &mut self.keys.jump,
+            &mut self.keys.fly,
+            &mut self.keys.hide,
+        ] {
+            *k = k.trim().to_string();
+            if crate::sys::vk(k).is_none() {
+                k.clear();
+            }
+        }
         let k = &mut self.skin;
         k.cols = k.cols.clamp(1, 32);
         k.rows = k.rows.clamp(1, 32);
@@ -183,7 +252,8 @@ impl Config {
 
     /// Warna badan belakang: turunan otomatis dari `color`.
     pub fn back(&self) -> [u8; 3] {
-        self.color.map(|v| (v as f32 * 0.75).round() as u8)
+        self.color
+            .map(|v| (v as f32 * self.body.back_k).round() as u8)
     }
 }
 

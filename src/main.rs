@@ -45,6 +45,7 @@ fn render(s: &Stick, cfg: &Config, sheet: Option<&skin::Sheet>) -> Canvas {
     let ox = WIN_W as f32 / 2.0;
     if cfg.dust {
         fx::draw_all(&mut c, &s.fx, s.x, ox, floor_y);
+        fx::draw_air(&mut c, &s.smoke, &s.sparks, s.x, ox, floor_y);
     }
     if s.fly == Fly::No {
         let o = V {
@@ -177,6 +178,8 @@ fn overlay() {
     let mut frame = Duration::from_millis(16);
     let mut hang: Option<Hang> = None;
     let mut rb_prev = false;
+    let mut key_prev = [false; 4];
+    let mut shown = true;
 
     let _ = el.run(move |event, elwt| match event {
         Event::AboutToWait => {
@@ -203,9 +206,24 @@ fn overlay() {
                         prev.0.clear();
                     }
                 }
+                // tombol pintas global: [gantung, lompat, kendaraan, sembunyikan]
+                let kd = [&cfg.keys.hang, &cfg.keys.jump, &cfg.keys.fly, &cfg.keys.hide]
+                    .map(|k| sys::vk(k).is_some_and(sys::key_down));
+                let edge: [bool; 4] = std::array::from_fn(|i| kd[i] && !key_prev[i]);
+                key_prev = kd;
+                if edge[1] {
+                    s.jump_now();
+                }
+                if edge[2] {
+                    s.force_fly();
+                }
+                if edge[3] {
+                    shown = !shown;
+                    win.set_visible(shown);
+                }
                 // klik kanan pada stickman = gantung di kursor; klik kanan lagi = lepas
                 if let Some((cx, cy, down, clicked)) = cfg.hang.then(sys::cursor).flatten() {
-                    let press = clicked || (down && !rb_prev);
+                    let press = clicked || (down && !rb_prev) || edge[0];
                     rb_prev = down;
                     let cur = V {
                         x: cx as f32,
@@ -217,9 +235,10 @@ fn overlay() {
                                 x: (prev.1.x + WIN_W as i32 / 2) as f32,
                                 y: (prev.1.y + FEET_Y as i32) as f32,
                             };
-                            let hit = (cur.x - feet.x).abs() <= 30.0
-                                && cur.y >= feet.y - 100.0
-                                && cur.y <= feet.y + 8.0;
+                            let hit = edge[0]
+                                || ((cur.x - feet.x).abs() <= 30.0
+                                    && cur.y >= feet.y - 100.0
+                                    && cur.y <= feet.y + 8.0);
                             if hit && s.fly == Fly::No {
                                 hang = Some(Hang::grab(cur, feet, s.face));
                             }

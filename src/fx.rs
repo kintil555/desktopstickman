@@ -7,6 +7,8 @@ const C1: u32 = 0xFFF1_F1F4;
 const C2: u32 = 0xFFDA_DADF;
 const DSPR: &str = include_str!("../assets/dspr.txt");
 const WALK: f32 = 350.0;
+/// Piksel dunia per sel sprite kendaraan.
+const PC: f32 = 2.0;
 
 // DUST (jatuh)
 const MIN_H: f32 = 24.0;
@@ -344,6 +346,178 @@ fn draw_roll(cx_: &mut Ctx, q: &Dust, t: f32, cx: i32, r: f32, th: f32, rise: f3
                     },
                 );
             }
+        }
+    }
+}
+
+/// Asap tipis dari ujung api kendaraan (koordinat dunia px; `h` = tinggi dari lantai).
+pub struct Smoke {
+    x: f32,
+    h: f32,
+    vx: f32,
+    vh: f32,
+    t: f32,
+    life: f32,
+    sd: f32,
+    wb: f32,
+}
+
+/// Percikan biru/putih: tarikan masuk saat kendaraan dipanggil, ledakan saat turun.
+pub struct Spark {
+    x: f32,
+    h: f32,
+    vx: f32,
+    vh: f32,
+    t: f32,
+    life: f32,
+    col: [u8; 3],
+}
+
+fn spark_col(rng: &mut Rng) -> [u8; 3] {
+    let r = rng.f();
+    if r < 0.5 {
+        [255, 255, 255]
+    } else if r < 0.75 {
+        [201, 246, 255]
+    } else {
+        [95, 223, 242]
+    }
+}
+
+pub fn spawn_smoke(l: &mut Vec<Smoke>, x: f32, h: f32, rng: &mut Rng) {
+    if l.len() >= 70 {
+        return;
+    }
+    l.push(Smoke {
+        x,
+        h,
+        vx: (rng.f() - 0.5) * 14.0 * PC,
+        vh: -14.0 * PC,
+        t: 0.0,
+        life: 0.6 + rng.f() * 0.4,
+        sd: rng.f() * std::f32::consts::TAU,
+        wb: 8.0 + rng.f() * 6.0,
+    });
+}
+
+/// Partikel tertarik ke tengah kendaraan (`h` = tinggi pusat dari lantai), ~360/detik.
+pub fn spawn_summon(l: &mut Vec<Spark>, x: f32, h: f32, dt: f32, rng: &mut Rng) {
+    for _ in 0..((dt * 360.0).round() as usize).max(1) {
+        if l.len() >= 400 {
+            return;
+        }
+        let a = rng.f() * std::f32::consts::TAU;
+        let d = 70.0 + rng.f() * 60.0;
+        let sp = d / (0.07 + rng.f() * 0.05);
+        l.push(Spark {
+            x: x + a.cos() * d,
+            h: h - a.sin() * d * 0.8,
+            vx: -a.cos() * sp,
+            vh: a.sin() * sp * 0.8,
+            t: 0.0,
+            life: 0.1 + rng.f() * 0.05,
+            col: spark_col(rng),
+        });
+    }
+}
+
+/// Ledakan percikan saat turun dari kendaraan.
+pub fn spawn_burst(l: &mut Vec<Spark>, x: f32, h: f32, rng: &mut Rng) {
+    for _ in 0..70 {
+        if l.len() >= 400 {
+            return;
+        }
+        let a = rng.f() * std::f32::consts::TAU;
+        let v = 90.0 + rng.f() * 260.0;
+        l.push(Spark {
+            x: x + (rng.f() - 0.5) * 34.0,
+            h: h + (rng.f() - 0.5) * 14.0,
+            vx: a.cos() * v,
+            vh: -(a.sin() * v * 0.8 - 30.0),
+            t: 0.0,
+            life: 0.35 + rng.f() * 0.45,
+            col: spark_col(rng),
+        });
+    }
+}
+
+pub fn update_air(sm: &mut Vec<Smoke>, sp: &mut Vec<Spark>, dt: f32) {
+    sm.retain_mut(|m| {
+        m.t += dt;
+        if m.t >= m.life {
+            return false;
+        }
+        m.vx += (m.t * m.wb + m.sd).sin() * 30.0 * PC * dt;
+        m.x += m.vx * dt;
+        m.h = (m.h + m.vh * dt).max(0.0);
+        let k = (-2.2 * dt).exp();
+        m.vx *= k;
+        m.vh = m.vh * k + 26.0 * PC * dt;
+        true
+    });
+    sp.retain_mut(|p| {
+        p.t += dt;
+        p.x += p.vx * dt;
+        p.h += p.vh * dt;
+        p.t < p.life
+    });
+}
+
+/// Campur premultiplied ARGB: `col` dengan alpha `a` di atas piksel.
+fn over(p: &mut u32, col: [u8; 3], a: f32) {
+    let k = 1.0 - a;
+    let ch = |s: u32, c: u8| (c as f32 * a + s as f32 * k).round().min(255.0) as u32;
+    let al = (255.0 * a + (*p >> 24) as f32 * k).round().min(255.0) as u32;
+    *p = al << 24
+        | ch((*p >> 16) & 255, col[0]) << 16
+        | ch((*p >> 8) & 255, col[1]) << 8
+        | ch(*p & 255, col[2]);
+}
+
+/// Tambah cahaya (additive) ke premultiplied ARGB.
+pub fn add(p: &mut u32, col: [u8; 3], a: f32) {
+    let ch = |s: u32, c: u8| (s + (c as f32 * a).round() as u32).min(255);
+    let al = ((*p >> 24) + (255.0 * a).round() as u32).min(255);
+    *p = al << 24
+        | ch((*p >> 16) & 255, col[0]) << 16
+        | ch((*p >> 8) & 255, col[1]) << 8
+        | ch(*p & 255, col[2]);
+}
+
+/// Gambar asap + percikan. `wx` = x dunia pada `ox` kanvas, `floor_y` = garis lantai di kanvas.
+pub fn draw_air(c: &mut Canvas, sm: &[Smoke], sp: &[Spark], wx: f32, ox: f32, floor_y: f32) {
+    const VSM: [[u8; 3]; 4] = [[123, 111, 114], [93, 86, 96], [67, 61, 72], [43, 38, 48]];
+    let cell = c.cell;
+    for m in sm {
+        let u = m.t / m.life;
+        let (cx, cy) = (m.x - wx + ox, floor_y - m.h);
+        let r = (1.5 + u * 4.0) * PC;
+        let col = VSM[((u * 4.0) as usize).min(3)];
+        let a = 0.4 * (1.0 - u);
+        let x0 = ((cx - r) / cell).floor().max(0.0) as usize;
+        let x1 = (((cx + r) / cell).ceil().max(0.0) as usize).min(c.w.saturating_sub(1));
+        let y0 = ((cy - r) / cell).floor().max(0.0) as usize;
+        let y1 = (((cy + r) / cell).ceil().max(0.0) as usize).min(c.h.saturating_sub(1));
+        for gy in y0..=y1 {
+            let py = (gy as f32 + 0.5) * cell;
+            if py > floor_y {
+                continue;
+            }
+            for gx in x0..=x1 {
+                let (dx, dy) = ((gx as f32 + 0.5) * cell - cx, py - cy);
+                if dx * dx + dy * dy <= r * r {
+                    over(&mut c.px[gy * c.w + gx], col, a);
+                }
+            }
+        }
+    }
+    for p in sp {
+        let u = p.t / p.life;
+        let gx = ((p.x - wx + ox) / cell).floor();
+        let gy = ((floor_y - p.h) / cell).floor();
+        if gx >= 0.0 && gy >= 0.0 && (gx as usize) < c.w && (gy as usize) < c.h {
+            let i = gy as usize * c.w + gx as usize;
+            over(&mut c.px[i], p.col, (1.0 - u).clamp(0.0, 1.0));
         }
     }
 }

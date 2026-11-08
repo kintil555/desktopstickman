@@ -1,6 +1,7 @@
 //! Kendaraan terbang TSR P400: sprite 59x59 (1 piksel sprite = 2px dunia), api prosedural.
 use crate::{
     config::Config,
+    fx,
     skin::{self, Sheet},
     stick::{Canvas, Pose, Stick, V},
 };
@@ -21,7 +22,12 @@ const CLIP: [[f32; 2]; 10] = [
     [21.0, 14.0],
     [22.0, 8.0],
 ];
-const PC: f32 = 2.0;
+pub const PC: f32 = 2.0;
+
+/// Offset ujung nozzle `j` dari titik pijak kendaraan (px dunia), dengan mirror untuk f<0.
+pub fn nozzle(j: usize, f: f32) -> V {
+    g(NZ[j][0], NZ[j][1], f)
+}
 
 /// Koordinat sprite (grid) -> offset dunia dari titik pijak, dengan mirror untuk f<0.
 fn g(x: f32, y: f32, f: f32) -> V {
@@ -116,6 +122,43 @@ fn flame(c: &mut Canvas, s: &Stick, o: V, floor_y: f32) {
                 } else {
                     VI
                 };
+            }
+        }
+        // glow additive di sepanjang sumbu api: terang di pangkal, mengecil ke ujung
+        let gk = 0.85 + 0.15 * (tm * 29.0 + jf * 2.1).sin();
+        let gr = 6.0 + 5.0 * thr;
+        let glows = [
+            (0.12, gr, [173, 255, 252], 0.45),
+            (0.4, gr * 0.85, [63, 223, 242], 0.4),
+            (0.72, gr * 0.6, [94, 186, 250], 0.3),
+        ];
+        for (u, r, col, k) in glows {
+            let p = V {
+                x: o.x + nz.x,
+                y: o.y + nz.y + l * PC * u,
+            };
+            glow(c, p, r * PC, col, k * gk, floor_y);
+        }
+    }
+}
+
+/// Cahaya additive profil (1-d/r)^2, dipotong di garis lantai.
+fn glow(c: &mut Canvas, p: V, r: f32, col: [u8; 3], k: f32, floor_y: f32) {
+    let cell = c.cell;
+    let x0 = ((p.x - r) / cell).floor().max(0.0) as usize;
+    let y0 = ((p.y - r) / cell).floor().max(0.0) as usize;
+    let x1 = (((p.x + r) / cell).ceil().max(0.0) as usize).min(c.w.saturating_sub(1));
+    let y1 = (((p.y + r) / cell).ceil().max(0.0) as usize).min(c.h.saturating_sub(1));
+    for gy in y0..=y1 {
+        let py = (gy as f32 + 0.5) * cell;
+        if py > floor_y {
+            continue;
+        }
+        for gx in x0..=x1 {
+            let (dx, dy) = ((gx as f32 + 0.5) * cell - p.x, py - p.y);
+            let t = dx.hypot(dy) / r;
+            if t < 1.0 {
+                fx::add(&mut c.px[gy * c.w + gx], col, (1.0 - t) * (1.0 - t) * k);
             }
         }
     }

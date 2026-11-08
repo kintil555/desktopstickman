@@ -1,10 +1,13 @@
 //! Panel pengaturan (Slint, gaya pixel GUI). Overlay = proses terpisah (`--overlay`), tetap jalan
 //! saat panel ditutup; Start/Stop lewat pid file.
 use crate::{
-    config::{self, Anim, Config},
+    config::{self, Anim, Body, Config},
+    shadow,
+    stick::{Canvas, Stick, V},
     sys, tray,
 };
 use slint::{Color, ComponentHandle, Image, Rgba8Pixel, SharedPixelBuffer};
+use std::time::{Duration, Instant};
 
 mod ui {
     #![allow(deprecated, clippy::all, unused)]
@@ -13,6 +16,8 @@ mod ui {
 use ui::Panel;
 
 const WHEEL: u32 = 80;
+/// Sisi kanvas pratinjau (px); ditampilkan 1:1 di panel dengan sel `cell`.
+const PV: u32 = 300;
 
 fn hsv2rgb(h: f32, s: f32, v: f32) -> [u8; 3] {
     let h = h.rem_euclid(360.0) / 60.0;
@@ -75,6 +80,58 @@ fn apply_hsv(ui: &Panel) {
     show_color(ui, rgb);
 }
 
+fn read_body(ui: &Panel, b: &mut Body) {
+    b.head_fill = ui.get_b_head_fill();
+    b.head_size = ui.get_b_head_size();
+    b.head_w = ui.get_b_head_w();
+    b.limb_w = ui.get_b_limb_w();
+    b.torso_w = ui.get_b_torso_w();
+    b.outline = ui.get_b_outline();
+    b.outline_color = config::parse_hex(&ui.get_b_outline_hex()).unwrap_or(b.outline_color);
+    b.shade = ui.get_b_shade();
+    b.shade_k = ui.get_b_shade_k();
+    b.back_k = ui.get_b_back_k();
+}
+
+/// Config dari nilai panel saat ini (belum disimpan) khusus untuk pratinjau.
+fn live_cfg(ui: &Panel, base: &Config) -> Config {
+    let mut c = base.clone();
+    c.color = hsv2rgb(ui.get_hue(), ui.get_sat(), ui.get_val());
+    c.speed = ui.get_speed();
+    c.cell = ui.get_cell().round() as u32;
+    c.shadow = ui.get_shadow();
+    c.shadow_opacity = ui.get_shadow_opacity();
+    c.shadow_dx = ui.get_shadow_dx().round() as i32;
+    c.shadow_dy = ui.get_shadow_dy().round() as i32;
+    c.shadow_blur = ui.get_shadow_blur().round() as u32;
+    c.shadow_color = config::parse_hex(&ui.get_shadow_hex()).unwrap_or(c.shadow_color);
+    read_body(ui, &mut c.body);
+    c.sanitize();
+    c
+}
+
+/// Satu frame pratinjau: sosok berlari di tempat di atas garis lantai, lengkap dengan shadow.
+fn preview(ui: &Panel, base: &Config, st: &mut Stick, dt: f32) -> Image {
+    let cfg = live_cfg(ui, base);
+    st.demo(dt, &cfg);
+    let mut cv = Canvas::new(PV, PV, cfg.cell);
+    let o = V {
+        x: PV as f32 / 2.0,
+        y: PV as f32 * 0.8,
+    };
+    let row = (o.y / cv.cell) as usize;
+    if row < cv.h {
+        cv.px[row * cv.w..(row + 1) * cv.w].fill(0xFF55_5555);
+    }
+    cv.draw(&st.pose(), o, &cfg);
+    shadow::apply(&mut cv, &cfg);
+    let mut buf = SharedPixelBuffer::<Rgba8Pixel>::new(cv.w as u32, cv.h as u32);
+    for (d, &p) in buf.make_mut_slice().iter_mut().zip(&cv.px) {
+        *d = Rgba8Pixel::new((p >> 16) as u8, (p >> 8) as u8, p as u8, (p >> 24) as u8);
+    }
+    Image::from_rgba8_premultiplied(buf)
+}
+
 fn load(ui: &Panel, c: &Config) {
     ui.set_speed(c.speed);
     ui.set_cell(c.cell as f32);
@@ -124,6 +181,25 @@ fn load(ui: &Panel, c: &Config) {
     ui.set_autostart(c.autostart);
     ui.set_delay(c.startup_delay as f32);
     ui.set_bg_close(c.bg_on_close);
+    let b = &c.body;
+    ui.set_b_head_fill(b.head_fill);
+    ui.set_b_head_size(b.head_size);
+    ui.set_b_head_w(b.head_w);
+    ui.set_b_limb_w(b.limb_w);
+    ui.set_b_torso_w(b.torso_w);
+    ui.set_b_outline(b.outline);
+    ui.set_b_outline_hex(config::to_hex(b.outline_color).into());
+    ui.set_b_shade(b.shade);
+    ui.set_b_shade_k(b.shade_k);
+    ui.set_b_back_k(b.back_k);
+    set_keys(ui, c);
+}
+
+fn set_keys(ui: &Panel, c: &Config) {
+    ui.set_key_hang(c.keys.hang.clone().into());
+    ui.set_key_jump(c.keys.jump.clone().into());
+    ui.set_key_fly(c.keys.fly.clone().into());
+    ui.set_key_hide(c.keys.hide.clone().into());
 }
 
 fn collect(ui: &Panel) -> Config {
@@ -181,6 +257,11 @@ fn collect(ui: &Panel) -> Config {
     c.autostart = ui.get_autostart();
     c.startup_delay = ui.get_delay().round() as u32;
     c.bg_on_close = ui.get_bg_close();
+    read_body(ui, &mut c.body);
+    c.keys.hang = ui.get_key_hang().to_string();
+    c.keys.jump = ui.get_key_jump().to_string();
+    c.keys.fly = ui.get_key_fly().to_string();
+    c.keys.hide = ui.get_key_hide().to_string();
     c.sanitize();
     c
 }
@@ -272,6 +353,16 @@ pub fn run() {
             }
         }
     });
+    ui.on_keys_accepted({
+        let w = ui.as_weak();
+        move || {
+            if let Some(ui) = w.upgrade() {
+                let c = collect(&ui);
+                c.save();
+                set_keys(&ui, &c);
+            }
+        }
+    });
     ui.on_toggle({
         let w = ui.as_weak();
         move || {
@@ -316,6 +407,28 @@ pub fn run() {
                 if ui.window().is_minimized() {
                     let _ = ui.hide();
                 }
+            },
+        );
+    }
+    // pratinjau model (~30 fps), hanya saat jendela terlihat
+    let pv_timer = slint::Timer::default();
+    {
+        let w = ui.as_weak();
+        let base = Config::load();
+        let mut st = Stick::new(0.0);
+        let mut last = Instant::now();
+        pv_timer.start(
+            slint::TimerMode::Repeated,
+            Duration::from_millis(33),
+            move || {
+                let Some(ui) = w.upgrade() else { return };
+                let now = Instant::now();
+                let dt = now.duration_since(last).as_secs_f32().min(0.1);
+                last = now;
+                if !ui.window().is_visible() || ui.window().is_minimized() {
+                    return;
+                }
+                ui.set_preview_img(preview(&ui, &base, &mut st, dt));
             },
         );
     }

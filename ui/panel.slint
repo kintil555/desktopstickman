@@ -209,8 +209,8 @@ component Label inherits Text {
 
 export component Panel inherits Window {
     title: "Desktop Stickman";
-    width: 500px;
-    height: 600px;
+    width: 940px;
+    height: 700px;
     background: Pal.bg;
     default-font-family: "Pixel Font - Groundhog";
     default-font-size: 18px;
@@ -269,6 +269,23 @@ export component Panel inherits Window {
     in-out property <bool> autostart: false;
     in-out property <float> delay: 30;
     in-out property <bool> bg-close: true;
+    // Model (bentuk prosedural)
+    in-out property <image> preview-img;
+    in-out property <bool> b-head-fill: false;
+    in-out property <float> b-head-size: 1;
+    in-out property <float> b-head-w: 2;
+    in-out property <float> b-limb-w: 2;
+    in-out property <float> b-torso-w: 2;
+    in-out property <bool> b-outline: true;
+    in-out property <string> b-outline-hex: "#28140A";
+    in-out property <bool> b-shade: true;
+    in-out property <float> b-shade-k: 1;
+    in-out property <float> b-back-k: 0.75;
+    // Tombol pintas
+    in-out property <string> key-hang;
+    in-out property <string> key-jump;
+    in-out property <string> key-fly;
+    in-out property <string> key-hide;
 
     callback toggle();
     callback changed();
@@ -279,6 +296,7 @@ export component Panel inherits Window {
     callback pick-skin();
     callback autostart-changed();
     callback quit-panel();
+    callback keys-accepted();
 
     Image {
         source: @image-url("px/gui.png", nine-slice(6));
@@ -287,9 +305,13 @@ export component Panel inherits Window {
         image-rendering: pixelated;
     }
 
-    VerticalLayout {
+    HorizontalLayout {
         padding: 16px;
+        spacing: 12px;
+
+        VerticalLayout {
         spacing: 8px;
+        horizontal-stretch: 1;
 
         Rectangle {
             height: 44px;
@@ -317,16 +339,19 @@ export component Panel inherits Window {
 
         HorizontalLayout {
             spacing: 4px;
-            PxButton { text: "Umum"; size: 16px; active: root.tab == 0; clicked => { root.tab = 0; } }
-            PxButton { text: "Warna"; size: 16px; active: root.tab == 1; clicked => { root.tab = 1; } }
-            PxButton { text: "Shadow"; size: 16px; active: root.tab == 2; clicked => { root.tab = 2; } }
-            PxButton { text: "Model"; size: 16px; active: root.tab == 3; clicked => { root.tab = 3; } }
-            PxButton { text: "Anim"; size: 16px; active: root.tab == 4; clicked => { root.tab = 4; } }
-            PxButton { text: "Sistem"; size: 16px; active: root.tab == 5; clicked => { root.tab = 5; } }
+            PxButton { text: "Umum"; size: 15px; active: root.tab == 0; clicked => { root.tab = 0; } }
+            PxButton { text: "Warna"; size: 15px; active: root.tab == 1; clicked => { root.tab = 1; } }
+            PxButton { text: "Shadow"; size: 15px; active: root.tab == 2; clicked => { root.tab = 2; } }
+            PxButton { text: "Model"; size: 15px; active: root.tab == 6; clicked => { root.tab = 6; } }
+            PxButton { text: "Skin"; size: 15px; active: root.tab == 3; clicked => { root.tab = 3; } }
+            PxButton { text: "Anim"; size: 15px; active: root.tab == 4; clicked => { root.tab = 4; } }
+            PxButton { text: "Tombol"; size: 15px; active: root.tab == 7; clicked => { root.tab = 7; } }
+            PxButton { text: "Sistem"; size: 15px; active: root.tab == 5; clicked => { root.tab = 5; } }
         }
 
         Rectangle {
             vertical-stretch: 1;
+            clip: true;
 
             if root.tab == 0 : VerticalLayout {
                 spacing: 4px;
@@ -523,6 +548,54 @@ export component Panel inherits Window {
                 Label { text: "Baris dihitung dari 0 (atas). Frame ke kanan dari kolom 0."; }
             }
 
+            if root.tab == 6 : HorizontalLayout {
+                spacing: 16px;
+                VerticalLayout {
+                    spacing: 4px;
+                    alignment: start;
+                    horizontal-stretch: 1;
+                    PxCheck { text: "Kepala terisi"; checked <=> root.b-head-fill; toggled => { root.changed(); } }
+                    Label { text: "Ukuran kepala: " + Math.round(root.b-head-size * 100) + "%"; }
+                    PxSlider { minimum: 0.5; maximum: 2; value <=> root.b-head-size; released => { root.changed(); } }
+                    Label { text: "Tebal garis kepala: " + Math.round(root.b-head-w * 10) / 10; }
+                    PxSlider { minimum: 1; maximum: 6; value <=> root.b-head-w; released => { root.changed(); } }
+                    PxCheck { text: "Outline"; checked <=> root.b-outline; toggled => { root.changed(); } }
+                    Label { text: "Warna outline (hex)"; }
+                    PxInput { text <=> root.b-outline-hex; accepted => { root.changed(); } }
+                }
+                VerticalLayout {
+                    spacing: 4px;
+                    alignment: start;
+                    horizontal-stretch: 1;
+                    Label { text: "Tebal tangan/kaki: " + Math.round(root.b-limb-w * 10) / 10; }
+                    PxSlider { minimum: 1; maximum: 6; value <=> root.b-limb-w; released => { root.changed(); } }
+                    Label { text: "Tebal badan: " + Math.round(root.b-torso-w * 10) / 10; }
+                    PxSlider { minimum: 1; maximum: 6; value <=> root.b-torso-w; released => { root.changed(); } }
+                    PxCheck { text: "Shading"; checked <=> root.b-shade; toggled => { root.changed(); } }
+                    Label { text: "Kekuatan shading: " + Math.round(root.b-shade-k * 100) + "%"; }
+                    PxSlider { minimum: 0; maximum: 2; value <=> root.b-shade-k; released => { root.changed(); } }
+                    Label { text: "Terang sisi belakang: " + Math.round(root.b-back-k * 100) + "%"; }
+                    PxSlider { minimum: 0.3; maximum: 1; value <=> root.b-back-k; released => { root.changed(); } }
+                }
+            }
+
+            if root.tab == 7 : VerticalLayout {
+                spacing: 4px;
+                alignment: start;
+                Label { text: "Tombol pintas global (Windows). Kosong = nonaktif."; }
+                Label { text: "Nama: A-Z, 0-9, F1-F12, Space, Tab, Home, End,"; }
+                Label { text: "Insert, Delete, PageUp, PageDown. Tekan Enter untuk simpan."; }
+                Rectangle { height: 6px; }
+                Label { text: "Gantung di kursor (tekan lagi = lepas)"; }
+                PxInput { text <=> root.key-hang; accepted => { root.keys-accepted(); } }
+                Label { text: "Lompat"; }
+                PxInput { text <=> root.key-jump; accepted => { root.keys-accepted(); } }
+                Label { text: "Panggil kendaraan"; }
+                PxInput { text <=> root.key-fly; accepted => { root.keys-accepted(); } }
+                Label { text: "Sembunyikan / tampilkan stickman"; }
+                PxInput { text <=> root.key-hide; accepted => { root.keys-accepted(); } }
+            }
+
             if root.tab == 5 : VerticalLayout {
                 spacing: 6px;
                 alignment: start;
@@ -538,6 +611,7 @@ export component Panel inherits Window {
         }
 
         HorizontalLayout {
+            height: 44px;
             spacing: 8px;
             PxButton {
                 text: root.running ? "Stop" : "Start";
@@ -548,6 +622,52 @@ export component Panel inherits Window {
                 text: "Tutup panel";
                 clicked => { root.quit-panel(); }
             }
+        }
+        }
+
+        VerticalLayout {
+            width: 320px;
+            spacing: 8px;
+            alignment: start;
+
+            Rectangle {
+                height: 44px;
+                Image {
+                    source: @image-url("px/web-header.png", nine-slice(2 2 6 2));
+                    width: 100%;
+                    height: 100%;
+                    image-rendering: pixelated;
+                }
+                Text {
+                    x: 14px;
+                    text: "Pratinjau";
+                    color: Pal.acc;
+                    font-size: 22px;
+                    vertical-alignment: center;
+                }
+            }
+            Rectangle {
+                width: 320px;
+                height: 320px;
+                Image {
+                    source: @image-url("px/field.png");
+                    width: 100%;
+                    height: 100%;
+                    image-fit: fill;
+                    image-rendering: pixelated;
+                }
+                Image {
+                    x: 10px;
+                    y: 10px;
+                    width: 300px;
+                    height: 300px;
+                    source: root.preview-img;
+                    image-fit: fill;
+                    image-rendering: pixelated;
+                }
+            }
+            Label { text: "Berlari lalu diam, berulang."; }
+            Label { text: "Warna, bentuk, dan shadow tampil langsung."; }
         }
     }
 }

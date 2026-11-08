@@ -1,5 +1,5 @@
 //! Gait prosedural + rasterizer sel (port dari `Stickman Pixel.html`: pose1/ik/drawFig).
-use crate::{config::Config, fx};
+use crate::{config::Config, fx, veh};
 use std::f32::consts::{PI, TAU};
 
 pub const S: f32 = 1.25 * 1.02;
@@ -91,6 +91,11 @@ pub struct Stick {
     puff_t: f32,
     peak: f32,
     pub fx: Vec<fx::Dust>,
+    /// Asap api kendaraan dan percikan masuk/keluar kendaraan.
+    pub smoke: Vec<fx::Smoke>,
+    pub sparks: Vec<fx::Spark>,
+    summon_t: f32,
+    smoke_acc: f32,
     /// Lama jatuh (detik) dan seberapa terangkat tangan saat mulai jatuh (1 = dari gantungan).
     fall_t: f32,
     arm0: f32,
@@ -138,6 +143,10 @@ impl Stick {
             puff_t: 0.0,
             peak: 0.0,
             fx: Vec::new(),
+            smoke: Vec::new(),
+            sparks: Vec::new(),
+            summon_t: 0.0,
+            smoke_acc: 0.0,
             fall_t: 0.0,
             arm0: 0.0,
             land_t: 0.0,
@@ -184,6 +193,7 @@ impl Stick {
         let margin = 40.0;
         self.t += dt;
         fx::update(&mut self.fx, dt);
+        fx::update_air(&mut self.smoke, &mut self.sparks, dt);
         self.land_t = (self.land_t - dt).max(0.0);
         if self.x < margin {
             self.dir = 1.0;
@@ -226,6 +236,7 @@ impl Stick {
             self.fly = Fly::Up;
             self.alt_to = 100.0 + rng.f() * (max_alt - 100.0).max(0.0);
             self.thr = 1.0;
+            self.summon_t = 0.18;
             fx::spawn_land(&mut self.fx, self.x, 0.6, rng);
             return;
         }
@@ -272,6 +283,12 @@ impl Stick {
     }
 
     fn update_fly(&mut self, dt: f32, cfg: &Config, rng: &mut Rng, max_x: f32) {
+        if self.summon_t > 0.0 {
+            self.summon_t = (self.summon_t - dt).max(0.0);
+            if cfg.dust {
+                fx::spawn_summon(&mut self.sparks, self.x, self.alt + 30.0, dt, rng);
+            }
+        }
         let tgt = if self.fly == Fly::Cruise { 260.0 } else { 0.0 } * cfg.speed * self.dir;
         let a = ACC * 0.5 * dt;
         self.vx += (tgt - self.vx).clamp(-a, a);
@@ -316,13 +333,58 @@ impl Stick {
                     self.mode = Mode::Idle;
                     if cfg.dust {
                         fx::spawn_land(&mut self.fx, self.x, 0.7, rng);
+                        fx::spawn_burst(&mut self.sparks, self.x, 30.0, rng);
                     }
                 }
             }
         }
+        if cfg.dust {
+            self.emit_smoke(dt, rng);
+        }
     }
 
-    /// Hanya untuk tes dump: mulai terbang segera.
+    /// Asap tipis dari ujung api tiap nozzle (kecepatan sebanding dorongan jet).
+    fn emit_smoke(&mut self, dt: f32, rng: &mut Rng) {
+        if self.fly == Fly::No {
+            return;
+        }
+        self.smoke_acc += dt * (8.0 + 12.0 * self.thr);
+        let l = (5.0 + 9.0 * self.thr) * 0.9 * veh::PC;
+        while self.smoke_acc >= 1.0 {
+            self.smoke_acc -= 1.0;
+            for j in 0..2 {
+                let n = veh::nozzle(j, self.face);
+                let x = self.x + n.x + (rng.f() - 0.5) * 3.0 * veh::PC;
+                let h = (self.alt - n.y - l).max(1.0);
+                fx::spawn_smoke(&mut self.smoke, x, h, rng);
+            }
+        }
+    }
+
+    /// Lompat sekarang (tombol pintas).
+    pub fn jump_now(&mut self) {
+        if self.fly == Fly::No && self.on() {
+            self.vup = JUMP_V;
+            self.oy = 0.01;
+            self.peak = 0.0;
+            self.fall_t = 0.0;
+            self.arm0 = 0.0;
+        }
+    }
+
+    /// Pratinjau panel: berlari di tempat 2,5 detik, diam 1,5 detik, berulang.
+    pub fn demo(&mut self, dt: f32, cfg: &Config) {
+        self.t += dt;
+        self.vx = if self.t % 4.0 < 2.5 {
+            WALK * cfg.speed
+        } else {
+            0.0
+        };
+        self.face = 1.0;
+        self.phase = (self.phase + self.vx * dt / (4.0 * A)) % 1.0;
+    }
+
+    /// Mulai terbang segera (tes dump / tombol pintas).
     pub fn force_fly(&mut self) {
         self.fly_cd = 0.0;
     }
@@ -480,21 +542,27 @@ impl Canvas {
         }
     }
 
-    fn limb(&mut self, pts: &[V], col: u32) {
-        for w in pts.windows(2) {
-            let (a, b) = (w[0], w[1]);
-            let lo = v(a.x.min(b.x) - 2.0, a.y.min(b.y) - 2.0);
-            let hi = v(a.x.max(b.x) + 2.0, a.y.max(b.y) + 2.0);
-            self.fill(lo, hi, col, |p| dist_seg(p, a, b) <= 2.0);
+    fn limb(&mut self, pts: &[V], col: u32, tw: f32) {
+        for s in pts.windows(2) {
+            let (a, b) = (s[0], s[1]);
+            let lo = v(a.x.min(b.x) - tw, a.y.min(b.y) - tw);
+            let hi = v(a.x.max(b.x) + tw, a.y.max(b.y) + tw);
+            self.fill(lo, hi, col, |p| dist_seg(p, a, b) <= tw);
         }
     }
 
-    fn ring(&mut self, c: V, r: f32, col: u32) {
-        let lo = v(c.x - r - 2.0, c.y - r - 2.0);
-        let hi = v(c.x + r + 2.0, c.y + r + 2.0);
+    fn ring(&mut self, c: V, r: f32, col: u32, tw: f32) {
+        let lo = v(c.x - r - tw, c.y - r - tw);
+        let hi = v(c.x + r + tw, c.y + r + tw);
         self.fill(lo, hi, col, |p| {
-            ((p.x - c.x).hypot(p.y - c.y) - r).abs() <= 2.0
+            ((p.x - c.x).hypot(p.y - c.y) - r).abs() <= tw
         });
+    }
+
+    fn disc(&mut self, c: V, r: f32, col: u32) {
+        let lo = v(c.x - r, c.y - r);
+        let hi = v(c.x + r, c.y + r);
+        self.fill(lo, hi, col, |p| (p.x - c.x).hypot(p.y - c.y) <= r);
     }
 
     /// Gambar sosok; `o` = titik pijak lantai (px kanvas). Shading + outline ala `pixelize` di HTML.
@@ -510,23 +578,32 @@ impl Canvas {
         let t = |p: V| v(o.x + p.x, o.y + p.y);
         let (hip, sh) = (t(q.hip), t(q.sh));
         let lim = |s: &(V, V)| [hip, t(s.0), t(s.1)];
-        fig.limb(&lim(&q.legs[1]), CB);
-        fig.limb(&[sh, t(q.arms[1].0), t(q.arms[1].1)], CB);
-        fig.limb(&[hip, sh], CF);
-        fig.limb(&lim(&q.legs[0]), CF);
-        fig.ring(t(q.head), HEADR, CF);
-        fig.limb(&[sh, t(q.arms[0].0), t(q.arms[0].1)], CF);
+        let bd = &cfg.body;
+        fig.limb(&lim(&q.legs[1]), CB, bd.limb_w);
+        fig.limb(&[sh, t(q.arms[1].0), t(q.arms[1].1)], CB, bd.limb_w);
+        fig.limb(&[hip, sh], CF, bd.torso_w);
+        fig.limb(&lim(&q.legs[0]), CF, bd.limb_w);
+        let hr = HEADR * bd.head_size;
+        if bd.head_fill {
+            fig.disc(t(q.head), hr + bd.head_w, CF);
+        } else {
+            fig.ring(t(q.head), hr, CF, bd.head_w);
+        }
+        fig.limb(&[sh, t(q.arms[0].0), t(q.arms[0].1)], CF, bd.limb_w);
 
         // turunan warna: selisih sama seperti palet HTML (HI/FS/BS terhadap F/B)
         let sh_col = |c: [u8; 3], d: [i16; 3]| -> u32 {
-            pack([0, 1, 2].map(|i| (c[i] as i16 + d[i]).clamp(0, 255) as u8))
+            pack([0, 1, 2].map(|i| {
+                (c[i] as i16 + (d[i] as f32 * bd.shade_k).round() as i16).clamp(0, 255) as u8
+            }))
         };
         let back = cfg.back();
         let (f, b) = (pack(cfg.color), pack(back));
         let hi = sh_col(cfg.color, [17, 56, 62]);
         let fs = sh_col(cfg.color, [-24, -22, -14]);
         let bs = sh_col(back, [-44, -22, -8]);
-        let ol = pack([40, 20, 10]);
+        let (hi, fs, bs) = if bd.shade { (hi, fs, bs) } else { (f, f, b) };
+        let ol = pack(bd.outline_color);
         let (w, h) = (self.w, self.h);
         for y in 0..h {
             for x in 0..w {
@@ -548,10 +625,11 @@ impl Canvas {
                     } else {
                         b
                     };
-                } else if (x > 0 && fig.px[i - 1] != 0)
-                    || (x + 1 < w && fig.px[i + 1] != 0)
-                    || (y > 0 && fig.px[i - w] != 0)
-                    || (y + 1 < h && fig.px[i + w] != 0)
+                } else if bd.outline
+                    && ((x > 0 && fig.px[i - 1] != 0)
+                        || (x + 1 < w && fig.px[i + 1] != 0)
+                        || (y > 0 && fig.px[i - w] != 0)
+                        || (y + 1 < h && fig.px[i + w] != 0))
                 {
                     self.px[i] = ol;
                 }
