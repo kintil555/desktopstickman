@@ -190,21 +190,12 @@ impl Item {
 }
 
 /// Satu stickman di daftar, dengan pengaturan sendiri (warna, model, shadow, skin, ...).
-#[derive(Serialize, Deserialize, Clone, Debug)]
+#[derive(Serialize, Deserialize, Clone, Debug, Default)]
 #[serde(default)]
 pub struct Inst {
     pub id: u32,
     /// Pengaturan khas stickman ini; hanya bagian `Config::copy_look` yang dipakai.
     pub cfg: Config,
-}
-
-impl Default for Inst {
-    fn default() -> Self {
-        Self {
-            id: 0,
-            cfg: Config::default(),
-        }
-    }
 }
 
 impl Inst {
