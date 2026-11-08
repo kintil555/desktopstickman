@@ -1,5 +1,7 @@
 mod config;
+mod fx;
 mod stick;
+mod veh;
 
 use config::Config;
 use std::{
@@ -7,7 +9,7 @@ use std::{
     sync::Arc,
     time::{Duration, Instant},
 };
-use stick::{Canvas, Rng, Stick, V};
+use stick::{Canvas, Fly, Rng, Stick, V};
 use winit::{
     dpi::{PhysicalPosition, PhysicalSize},
     event::{Event, WindowEvent},
@@ -16,9 +18,9 @@ use winit::{
 };
 
 const WIN_W: u32 = 320;
-const WIN_H: u32 = 160;
+const WIN_H: u32 = 200;
 /// Posisi telapak kaki di dalam jendela (px dari atas).
-const FEET_Y: f32 = 150.0;
+const FEET_Y: f32 = 165.0;
 
 fn seed() -> u32 {
     std::time::SystemTime::now()
@@ -28,43 +30,55 @@ fn seed() -> u32 {
 
 fn render(s: &Stick, cfg: &Config) -> Canvas {
     let mut c = Canvas::new(WIN_W, WIN_H, cfg.cell);
-    let k = (1.0 - s.oy / 120.0).clamp(0.3, 1.0);
-    c.shadow(
-        V {
-            x: WIN_W as f32 / 2.0,
-            y: FEET_Y,
-        },
-        k,
-    );
-    c.draw(
-        &s.pose(),
-        V {
-            x: WIN_W as f32 / 2.0,
+    let floor_y = FEET_Y + s.alt;
+    let ox = WIN_W as f32 / 2.0;
+    if cfg.dust {
+        for d in &s.fx {
+            fx::draw(&mut c, d, s.x, ox, floor_y);
+        }
+    }
+    if s.fly == Fly::No {
+        let o = V {
+            x: ox,
             y: FEET_Y - s.oy,
-        },
-        cfg,
-    );
+        };
+        c.draw(&s.pose(), o, cfg);
+    } else {
+        let o = V {
+            x: ox,
+            y: FEET_Y + s.bob(),
+        };
+        veh::draw(&mut c, s, o, cfg, floor_y);
+    }
     c
 }
 
 /// Tes headless: tulis strip frame ke PPM (latar abu-abu muda).
-fn dump(path: &str) {
+fn dump(path: &str, fly: bool) {
     let cfg = Config::default();
     let mut rng = Rng::new(7);
     let mut s = Stick::new(600.0);
     // lewati fase idle: tunggu sampai berlari
     for _ in 0..20000 {
-        if s.vx.abs() > 300.0 {
+        let ready = if fly {
+            s.fly == Fly::Cruise
+        } else {
+            s.vx.abs() > 300.0
+        };
+        if ready {
             break;
         }
-        s.update(1.0 / 60.0, &cfg, &mut rng, 1200.0);
+        if fly {
+            s.force_fly();
+        }
+        s.update(1.0 / 60.0, &cfg, &mut rng, 1200.0, 300.0);
     }
     let (frames, step) = (12usize, 1.0 / 30.0);
     let (w, h) = (WIN_W as usize, WIN_H as usize);
     let mut img = vec![200u8; w * frames * h * 3];
     for f in 0..frames {
         for _ in 0..2 {
-            s.update(step, &cfg, &mut rng, 1200.0);
+            s.update(step, &cfg, &mut rng, 1200.0, 300.0);
         }
         let c = render(&s, &cfg);
         for y in 0..h {
@@ -115,6 +129,7 @@ fn overlay() {
             |m| (m.position(), m.size()),
         );
     let max_x = mon_size.width as f32;
+    let max_alt = (mon_size.height as i32 - cfg.floor_offset - 250).max(100) as f32;
     let mut rng = Rng::new(seed());
     let mut s = Stick::new(max_x / 2.0);
     let frame = Duration::from_millis(16);
@@ -143,11 +158,11 @@ fn overlay() {
                         cfg = Config::load();
                     }
                 }
-                s.update(dt, &cfg, &mut rng, max_x);
+                s.update(dt, &cfg, &mut rng, max_x, max_alt);
                 let floor_y = mon_pos.y + mon_size.height as i32 - cfg.floor_offset;
                 win.set_outer_position(PhysicalPosition::new(
                     mon_pos.x + s.x as i32 - WIN_W as i32 / 2,
-                    floor_y - FEET_Y as i32,
+                    floor_y - FEET_Y as i32 - s.alt as i32,
                 ));
                 let c = render(&s, &cfg);
                 if let Ok(mut buf) = surf.buffer_mut() {
@@ -169,7 +184,10 @@ fn overlay() {
 fn main() {
     let args: Vec<String> = std::env::args().collect();
     match args.get(1).map(String::as_str) {
-        Some("--dump") => dump(args.get(2).map_or("dump.ppm", String::as_str)),
+        Some("--dump") => dump(
+            args.get(2).map_or("dump.ppm", String::as_str),
+            args.get(3).is_some_and(|a| a == "fly"),
+        ),
         // TODO: tanpa argumen = panel Slint (lihat NOTES.md); sementara jalankan overlay.
         _ => overlay(),
     }

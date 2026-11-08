@@ -16,6 +16,8 @@ pub struct Config {
     pub color_b: [u8; 3],
     pub jump: bool,
     pub run: bool,
+    pub fly: bool,
+    pub dust: bool,
 }
 
 impl Default for Config {
@@ -28,6 +30,8 @@ impl Default for Config {
             color_b: [184, 84, 26],
             jump: true,
             run: true,
+            fly: true,
+            dust: true,
         }
     }
 }

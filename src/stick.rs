@@ -1,5 +1,5 @@
 //! Gait prosedural + rasterizer sel (port dari `Stickman Pixel.html`: pose1/ik/drawFig).
-use crate::config::Config;
+use crate::{config::Config, fx};
 use std::f32::consts::{PI, TAU};
 
 pub const S: f32 = 1.25 * 1.02;
@@ -69,19 +69,36 @@ pub struct Stick {
     vup: f32,
     pub face: f32,
     phase: f32,
-    t: f32,
+    pub t: f32,
     mode: Mode,
     timer: f32,
     dir: f32,
     jump_t: f32,
+    /// Ketinggian terbang di atas lantai (jendela ikut naik) + dorongan jet 0..1.
+    pub alt: f32,
+    pub fly: Fly,
+    pub thr: f32,
+    alt_to: f32,
+    fly_t: f32,
+    fly_cd: f32,
+    puff_t: f32,
+    pub fx: Vec<fx::Dust>,
 }
 
 pub struct Pose {
-    hip: V,
-    sh: V,
-    head: V,
-    legs: [(V, V); 2],
-    arms: [(V, V); 2],
+    pub hip: V,
+    pub sh: V,
+    pub head: V,
+    pub legs: [(V, V); 2],
+    pub arms: [(V, V); 2],
+}
+
+#[derive(Clone, Copy, PartialEq)]
+pub enum Fly {
+    No,
+    Up,
+    Cruise,
+    Down,
 }
 
 impl Stick {
@@ -98,6 +115,14 @@ impl Stick {
             timer: 1.0,
             dir: 1.0,
             jump_t: 3.0,
+            alt: 0.0,
+            fly: Fly::No,
+            thr: 0.0,
+            alt_to: 0.0,
+            fly_t: 0.0,
+            fly_cd: 8.0,
+            puff_t: 0.0,
+            fx: Vec::new(),
         }
     }
 
@@ -105,9 +130,19 @@ impl Stick {
         self.oy <= 0.0
     }
 
-    pub fn update(&mut self, dt: f32, cfg: &Config, rng: &mut Rng, max_x: f32) {
+    pub fn update(&mut self, dt: f32, cfg: &Config, rng: &mut Rng, max_x: f32, max_alt: f32) {
         let margin = 40.0;
         self.t += dt;
+        fx::update(&mut self.fx, dt);
+        if self.x < margin {
+            self.dir = 1.0;
+        } else if self.x > max_x - margin {
+            self.dir = -1.0;
+        }
+        if self.fly != Fly::No {
+            self.update_fly(dt, cfg, rng, max_x);
+            return;
+        }
         self.timer -= dt;
         if self.timer <= 0.0 {
             let r = rng.f();
@@ -120,12 +155,6 @@ impl Stick {
             };
             self.timer = 1.5 + rng.f() * 3.5;
             self.dir = if rng.f() < 0.5 { -1.0 } else { 1.0 };
-        }
-        // balik arah di tepi layar
-        if self.x < margin {
-            self.dir = 1.0;
-        } else if self.x > max_x - margin {
-            self.dir = -1.0;
         }
         let target = match self.mode {
             Mode::Idle => 0.0,
@@ -140,6 +169,14 @@ impl Stick {
         }
         self.x = (self.x + self.vx * dt).clamp(0.0, max_x);
 
+        self.fly_cd -= dt;
+        if cfg.fly && self.fly_cd <= 0.0 && self.on() {
+            self.fly = Fly::Up;
+            self.alt_to = 100.0 + rng.f() * (max_alt - 100.0).max(0.0);
+            self.thr = 1.0;
+            fx::burst(&mut self.fx, self.x, 0.6, rng);
+            return;
+        }
         self.jump_t -= dt;
         if self.jump_t <= 0.0 {
             if cfg.jump && self.on() && rng.f() < 0.6 {
@@ -152,6 +189,14 @@ impl Stick {
             self.oy += self.vup * dt;
             self.vup -= GRAV * dt;
             if self.oy <= 0.0 {
+                if cfg.dust {
+                    fx::burst(
+                        &mut self.fx,
+                        self.x,
+                        (-self.vup / 900.0).clamp(0.1, 1.0),
+                        rng,
+                    );
+                }
                 self.oy = 0.0;
                 self.vup = 0.0;
             }
@@ -159,6 +204,77 @@ impl Stick {
         // satu siklus penuh = 4A jarak tempuh (tanpa foot-sliding)
         if self.on() {
             self.phase = (self.phase + self.vx.abs() * dt / (4.0 * A)) % 1.0;
+            self.puff_t -= dt;
+            if cfg.dust && self.vx.abs() > 180.0 && self.puff_t <= 0.0 {
+                self.puff_t = 0.05;
+                let k = ((self.vx.abs() / WALK - 0.5) * 2.0).clamp(0.0, 1.0);
+                fx::run_puff(&mut self.fx, self.x, -self.vx.signum(), k, rng);
+            }
+        }
+    }
+
+    fn update_fly(&mut self, dt: f32, cfg: &Config, rng: &mut Rng, max_x: f32) {
+        let tgt = if self.fly == Fly::Cruise { 260.0 } else { 0.0 } * cfg.speed * self.dir;
+        let a = ACC * 0.5 * dt;
+        self.vx += (tgt - self.vx).clamp(-a, a);
+        if self.vx.abs() > 5.0 {
+            self.face = self.vx.signum();
+        }
+        self.x = (self.x + self.vx * dt).clamp(0.0, max_x);
+        match self.fly {
+            Fly::Up => {
+                self.alt += 380.0 * dt;
+                self.thr = 1.0;
+                if self.alt < 30.0 && cfg.dust {
+                    self.puff_t -= dt;
+                    if self.puff_t <= 0.0 {
+                        self.puff_t = 0.08;
+                        fx::burst(&mut self.fx, self.x, 0.3, rng);
+                    }
+                }
+                if self.alt >= self.alt_to {
+                    self.alt = self.alt_to;
+                    self.fly = Fly::Cruise;
+                    self.fly_t = 4.0 + rng.f() * 5.0;
+                    self.dir = if rng.f() < 0.5 { -1.0 } else { 1.0 };
+                }
+            }
+            Fly::Cruise => {
+                self.thr = 0.5;
+                self.fly_t -= dt;
+                if self.fly_t <= 0.0 {
+                    self.fly = Fly::Down;
+                }
+            }
+            _ => {
+                self.thr = 0.35;
+                self.alt -= 300.0 * dt;
+                if self.alt <= 0.0 {
+                    self.alt = 0.0;
+                    self.fly = Fly::No;
+                    self.thr = 0.0;
+                    self.fly_cd = 12.0 + rng.f() * 20.0;
+                    self.timer = 1.0;
+                    self.mode = Mode::Idle;
+                    if cfg.dust {
+                        fx::burst(&mut self.fx, self.x, 0.7, rng);
+                    }
+                }
+            }
+        }
+    }
+
+    /// Hanya untuk tes dump: mulai terbang segera.
+    pub fn force_fly(&mut self) {
+        self.fly_cd = 0.0;
+    }
+
+    /// Offset vertikal goyangan kendaraan saat melayang (px).
+    pub fn bob(&self) -> f32 {
+        if self.fly == Fly::Cruise {
+            ((self.t * 1000.0 / 240.0).sin() * 0.8).round() * 2.0
+        } else {
+            0.0
         }
     }
 
@@ -235,7 +351,7 @@ impl Stick {
 pub struct Canvas {
     pub w: usize,
     pub h: usize,
-    cell: f32,
+    pub cell: f32,
     pub px: Vec<u32>,
 }
 
