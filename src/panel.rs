@@ -423,7 +423,9 @@ pub fn run() {
                 ui.set_recording(0);
                 return;
             }
-            let Some(name) = sys::capture(&mut rec.borrow_mut()) else { return };
+            let Some(name) = sys::capture(&mut rec.borrow_mut()) else {
+                return;
+            };
             match n {
                 1 => ui.set_key_hang(name.into()),
                 2 => ui.set_key_jump(name.into()),
@@ -436,7 +438,11 @@ pub fn run() {
             set_keys(&ui, &c);
         }
     };
-    rec_timer.start(slint::TimerMode::Repeated, Duration::from_millis(40), rec_tick);
+    rec_timer.start(
+        slint::TimerMode::Repeated,
+        Duration::from_millis(40),
+        rec_tick,
+    );
     ui.on_quit_panel(|| {
         let _ = slint::quit_event_loop();
     });

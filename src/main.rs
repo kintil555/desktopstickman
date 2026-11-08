@@ -36,7 +36,9 @@ const FEET_Y: f32 = 225.0;
 fn seed() -> u32 {
     std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
-        .map_or(1, |d| d.subsec_nanos() ^ std::process::id().wrapping_mul(2_654_435_761))
+        .map_or(1, |d| {
+            d.subsec_nanos() ^ std::process::id().wrapping_mul(2_654_435_761)
+        })
 }
 
 fn render(s: &Stick, cfg: &Config, sheet: Option<&skin::Sheet>) -> Canvas {
