@@ -1,8 +1,13 @@
+#![cfg_attr(all(windows, not(debug_assertions)), windows_subsystem = "windows")]
+
 mod config;
 mod fx;
 mod panel;
 mod present;
+mod shadow;
+mod skin;
 mod stick;
+mod sys;
 mod veh;
 #[cfg(windows)]
 mod winalpha;
@@ -31,7 +36,7 @@ fn seed() -> u32 {
         .map_or(1, |d| d.subsec_nanos())
 }
 
-fn render(s: &Stick, cfg: &Config) -> Canvas {
+fn render(s: &Stick, cfg: &Config, sheet: Option<&skin::Sheet>) -> Canvas {
     let mut c = Canvas::new(WIN_W, WIN_H, cfg.cell);
     let floor_y = FEET_Y + s.alt;
     let ox = WIN_W as f32 / 2.0;
@@ -43,15 +48,27 @@ fn render(s: &Stick, cfg: &Config) -> Canvas {
             x: ox,
             y: FEET_Y - s.oy,
         };
-        c.draw(&s.pose(), o, cfg);
+        match sheet {
+            Some(sh) => skin::draw_player(&mut c, sh, cfg, s, o, false),
+            None => c.draw(&s.pose(), o, cfg),
+        }
     } else {
         let o = V {
             x: ox,
             y: FEET_Y + s.bob(),
         };
-        veh::draw(&mut c, s, o, cfg, floor_y);
+        veh::draw(&mut c, s, o, cfg, floor_y, sheet);
     }
+    shadow::apply(&mut c, cfg);
     c
+}
+
+fn load_sheet(cfg: &Config) -> Option<skin::Sheet> {
+    if cfg.skin.enabled {
+        skin::load(&cfg.skin.path)
+    } else {
+        None
+    }
 }
 
 /// Tes headless: tulis strip frame ke PPM (latar abu-abu muda).
@@ -81,7 +98,7 @@ fn dump(path: &str, fly: bool) {
         for _ in 0..2 {
             s.update(step, &cfg, &mut rng, 1200.0, 300.0);
         }
-        let c = render(&s, &cfg);
+        let c = render(&s, &cfg, None);
         for y in 0..h {
             for x in 0..w {
                 let p = c.px[(y / cfg.cell as usize) * c.w + x / cfg.cell as usize];
@@ -100,7 +117,10 @@ fn dump(path: &str, fly: bool) {
 }
 
 fn overlay() {
+    sys::lower_priority();
+    sys::write_pid();
     let mut cfg = Config::load();
+    let mut sheet = load_sheet(&cfg);
     let mut cfg_mtime = Config::mtime();
     let el = EventLoop::new().expect("event loop");
     let win = Arc::new(
@@ -128,8 +148,10 @@ fn overlay() {
     let max_alt = (mon_size.height as i32 - cfg.floor_offset - 250).max(100) as f32;
     let mut rng = Rng::new(seed());
     let mut s = Stick::new(max_x / 2.0);
-    let frame = Duration::from_millis(16);
     let (mut next, mut last, mut chk) = (Instant::now(), Instant::now(), Instant::now());
+    // hemat: lewati present bila gambar & posisi sama; idle di lantai cukup ~30 fps
+    let mut prev: (Vec<u32>, PhysicalPosition<i32>) = (Vec::new(), PhysicalPosition::new(0, 0));
+    let mut frame = Duration::from_millis(16);
 
     let _ = el.run(move |event, elwt| match event {
         Event::AboutToWait => {
@@ -152,6 +174,8 @@ fn overlay() {
                     if mt != cfg_mtime {
                         cfg_mtime = mt;
                         cfg = Config::load();
+                        sheet = load_sheet(&cfg);
+                        prev.0.clear();
                     }
                 }
                 s.update(dt, &cfg, &mut rng, max_x, max_alt);
@@ -160,12 +184,28 @@ fn overlay() {
                     mon_pos.x + s.x as i32 - WIN_W as i32 / 2,
                     floor_y - FEET_Y as i32 - s.alt as i32,
                 );
-                out.present(&render(&s, &cfg), cfg.cell as usize, pos);
+                let idle = s.fly == Fly::No && s.on() && s.vx.abs() < 1.0 && s.fx.is_empty();
+                frame = Duration::from_millis(if idle { 33 } else { 16 });
+                let img = render(&s, &cfg, sheet.as_ref());
+                if prev.1 != pos || prev.0 != img.px {
+                    out.present(&img, cfg.cell as usize, pos);
+                    prev = (img.px, pos);
+                }
             }
             _ => {}
         },
         _ => {}
     });
+    sys::clear_pid();
+}
+
+/// Dipanggil autostart: tidur (tanpa CPU) `startup_delay` detik, lalu jalankan overlay.
+fn startup() {
+    sys::lower_priority();
+    std::thread::sleep(Duration::from_secs(Config::load().startup_delay as u64));
+    if !sys::overlay_running() {
+        overlay();
+    }
 }
 
 fn main() {
@@ -176,6 +216,7 @@ fn main() {
             args.get(3).is_some_and(|a| a == "fly"),
         ),
         Some("--overlay") => overlay(),
+        Some("--startup") => startup(),
         _ => panel::run(),
     }
 }

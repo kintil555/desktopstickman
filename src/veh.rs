@@ -1,6 +1,7 @@
 //! Kendaraan terbang TSR P400: sprite 59x59 (1 piksel sprite = 2px dunia), api prosedural.
 use crate::{
     config::Config,
+    skin::{self, Sheet},
     stick::{Canvas, Pose, Stick, V},
 };
 
@@ -134,31 +135,41 @@ fn inside(p: V, poly: &[V]) -> bool {
 }
 
 /// `o` = titik pijak kendaraan di kanvas; `floor_y` = garis lantai (api dipotong di sini).
-pub fn draw(c: &mut Canvas, s: &Stick, o: V, cfg: &Config, floor_y: f32) {
+/// Dengan `sheet` (skin kustom) pemain digambar tanpa clip kokpit, skala `seat_scale`.
+pub fn draw(c: &mut Canvas, s: &Stick, o: V, cfg: &Config, floor_y: f32, sheet: Option<&Sheet>) {
     flame(c, s, o, floor_y);
     blit(c, JB, o, s.face);
     blit(c, BODY, o, s.face);
-    let mut tmp = Canvas::new(c.w as u32 * cfg.cell, c.h as u32 * cfg.cell, cfg.cell);
-    tmp.draw(&seated(s.face), o, cfg);
-    let poly: Vec<V> = CLIP
-        .iter()
-        .map(|p| {
-            let q = g(p[0], p[1], s.face);
-            V {
-                x: o.x + q.x,
-                y: o.y + q.y,
-            }
-        })
-        .collect();
-    for gy in 0..c.h {
-        for gx in 0..c.w {
-            let i = gy * c.w + gx;
-            let ctr = V {
-                x: (gx as f32 + 0.5) * c.cell,
-                y: (gy as f32 + 0.5) * c.cell,
-            };
-            if tmp.px[i] != 0 && inside(ctr, &poly) {
-                c.px[i] = tmp.px[i];
+    if let Some(sh) = sheet {
+        let q = g(28.0, 34.0, s.face);
+        let seat = V {
+            x: o.x + q.x,
+            y: o.y + q.y,
+        };
+        skin::draw_player(c, sh, cfg, s, seat, true);
+    } else {
+        let mut tmp = Canvas::new(c.w as u32 * cfg.cell, c.h as u32 * cfg.cell, cfg.cell);
+        tmp.draw(&seated(s.face), o, cfg);
+        let poly: Vec<V> = CLIP
+            .iter()
+            .map(|p| {
+                let q = g(p[0], p[1], s.face);
+                V {
+                    x: o.x + q.x,
+                    y: o.y + q.y,
+                }
+            })
+            .collect();
+        for gy in 0..c.h {
+            for gx in 0..c.w {
+                let i = gy * c.w + gx;
+                let ctr = V {
+                    x: (gx as f32 + 0.5) * c.cell,
+                    y: (gy as f32 + 0.5) * c.cell,
+                };
+                if tmp.px[i] != 0 && inside(ctr, &poly) {
+                    c.px[i] = tmp.px[i];
+                }
             }
         }
     }

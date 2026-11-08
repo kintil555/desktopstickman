@@ -22,3 +22,10 @@ Gambar: kaki/lengan belakang warna B, badan+kaki depan F, kepala lingkaran, line
 Kendaraan VEH: NZ[[11.5,53],[48,52]] nozzle, BP[30,34] kursi, JP[[11,46],[48,46]], CLIP polygon [[25,4],[33,4],[37,8],[40,14],[42,22],[42,28],[20,28],[20,20],[21,14],[22,8]] (pemain digambar hanya di dalam polygon), urutan layer: jb, body, pemain(clip), jf. Api prosedural: kerucut dari nozzle, L=5+9*thr, lebar 3.4+.9*thr, palet hot[234,253,255] br[173,255,252] cy[63,223,242] bl[94,186,250] vi[120,95,217]; asap abu [123,111,114]->[43,38,48] alpha .4->0.
 RUNFX: curve1.6 sx[.5,1.4] sy[.22,.65] life[.26,.34] gap.05 drift[12,28] fleck.06. DUST: minH24 maxH420 curve.75 roll[1.1,9.1] spd[30,300] life[.18,.68] tail[1,6]; sprite DSPR (string array) ada di HTML.
 Sumber lengkap: `Stickman Pixel.html` (cari: pose1, drawFig, spawnRun, DSPR, drawDust, vehFlames, SFX).
+
+## Update (panel pixel GUI + fitur baru, BELUM di-build/tes — cek `cargo build`, `cargo fmt --check`, clippy)
+- ui/panel.slint: gaya makespritewithclaude (aset ui/px = gui/button/field/fill/slider-head/web-header 2x nearest, font Groundhog). Tab: Umum, Warna (satu color wheel + terang + hex; badan belakang = `Config::back()` otomatis), Shadow, Model, Anim, Sistem.
+- Config: `color` (alias color_f), shadow_*, autostart/startup_delay/bg_on_close, `skin` (sprite sheet PNG grid, anim per state, scale/offset/tint/faces_left). Config & pid kini di folder exe.
+- src/shadow.rs (drop shadow geser+blur), src/skin.rs (PNG via crate `png`), src/sys.rs (pid, spawn terlepas, autostart: reg Run / .desktop, prioritas rendah).
+- `--startup` = tidur `startup_delay` detik lalu overlay. Overlay: proses terpisah, ~30fps saat idle, skip present bila frame sama.
+- Credit font: Pixel Font - Groundhog © 2022 Chevy Ray Johnston.

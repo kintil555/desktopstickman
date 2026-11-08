@@ -14,7 +14,7 @@ const SH: f32 = 14.0 * S;
 const LEG: f32 = 28.0 * S;
 const A: f32 = LEG * 0.56;
 const LIFT: f32 = LEG * 0.26;
-const WALK: f32 = 350.0;
+pub const WALK: f32 = 350.0;
 const ACC: f32 = 2600.0 * WALK / 460.0;
 const GRAV: f32 = 2400.0;
 const JUMP_V: f32 = 760.0;
@@ -128,7 +128,7 @@ impl Stick {
         }
     }
 
-    fn on(&self) -> bool {
+    pub fn on(&self) -> bool {
         self.oy <= 0.0
     }
 
@@ -435,10 +435,11 @@ impl Canvas {
         let sh_col = |c: [u8; 3], d: [i16; 3]| -> u32 {
             pack([0, 1, 2].map(|i| (c[i] as i16 + d[i]).clamp(0, 255) as u8))
         };
-        let (f, b) = (pack(cfg.color_f), pack(cfg.color_b));
-        let hi = sh_col(cfg.color_f, [17, 56, 62]);
-        let fs = sh_col(cfg.color_f, [-24, -22, -14]);
-        let bs = sh_col(cfg.color_b, [-44, -22, -8]);
+        let back = cfg.back();
+        let (f, b) = (pack(cfg.color), pack(back));
+        let hi = sh_col(cfg.color, [17, 56, 62]);
+        let fs = sh_col(cfg.color, [-24, -22, -14]);
+        let bs = sh_col(back, [-44, -22, -8]);
         let ol = pack([40, 20, 10]);
         let (w, h) = (self.w, self.h);
         for y in 0..h {
