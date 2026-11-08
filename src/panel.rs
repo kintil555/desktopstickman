@@ -197,6 +197,22 @@ fn load(ui: &Panel, c: &Config) {
     ui.set_b_shade_k(b.shade_k);
     ui.set_b_back_k(b.back_k);
     set_keys(ui, c);
+    update_grid(ui, &c.skin);
+}
+
+/// Grid sprite sheet (tab Skin/Anim): dimuat ulang tiap pengaturan berubah.
+fn update_grid(ui: &Panel, k: &config::Skin) {
+    let img = crate::skin::grid_preview(k, 300, 190).map(|(w, h, px)| {
+        let mut buf = SharedPixelBuffer::<Rgba8Pixel>::new(w as u32, h as u32);
+        for (d, p) in buf.make_mut_slice().iter_mut().zip(px.chunks_exact(4)) {
+            *d = Rgba8Pixel::new(p[0], p[1], p[2], p[3]);
+        }
+        Image::from_rgba8(buf)
+    });
+    ui.set_grid_ok(img.is_some());
+    if let Some(i) = img {
+        ui.set_grid_img(i);
+    }
 }
 
 fn set_keys(ui: &Panel, c: &Config) {
@@ -282,7 +298,9 @@ pub fn run() {
         let w = ui.as_weak();
         move || {
             if let Some(ui) = w.upgrade() {
-                collect(&ui).save();
+                let c = collect(&ui);
+                c.save();
+                update_grid(&ui, &c.skin);
             }
         }
     });
@@ -343,7 +361,9 @@ pub fn run() {
             ) {
                 ui.set_skin_path(f.to_string_lossy().into_owned().into());
                 ui.set_skin_on(true);
-                collect(&ui).save();
+                let c = collect(&ui);
+                c.save();
+                update_grid(&ui, &c.skin);
             }
             #[cfg(not(windows))]
             let _ = &w; // non-Windows: ketik path langsung di kolom
