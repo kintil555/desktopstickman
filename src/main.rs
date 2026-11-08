@@ -28,6 +28,14 @@ fn seed() -> u32 {
 
 fn render(s: &Stick, cfg: &Config) -> Canvas {
     let mut c = Canvas::new(WIN_W, WIN_H, cfg.cell);
+    let k = (1.0 - s.oy / 120.0).clamp(0.3, 1.0);
+    c.shadow(
+        V {
+            x: WIN_W as f32 / 2.0,
+            y: FEET_Y,
+        },
+        k,
+    );
     c.draw(
         &s.pose(),
         V {
