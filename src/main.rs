@@ -142,10 +142,14 @@ fn dump(path: &str, fly: bool) {
     std::fs::write(path, out).expect("tulis dump");
 }
 
-fn overlay() {
+fn overlay(id: u32) {
     sys::lower_priority();
-    sys::write_pid();
+    sys::write_pid(id);
     let mut cfg = Config::load();
+    if !cfg.apply_inst(id) {
+        sys::clear_pid();
+        return;
+    }
     let mut sheet = load_sheet(&cfg);
     let mut cfg_mtime = Config::mtime();
     let el = EventLoop::new().expect("event loop");
@@ -207,6 +211,11 @@ fn overlay() {
                     if mt != cfg_mtime {
                         cfg_mtime = mt;
                         cfg = Config::load();
+                        // dihapus dari daftar (di panel) = stickman ini keluar
+                        if !cfg.apply_inst(id) {
+                            elwt.exit();
+                            return;
+                        }
                         sheet = load_sheet(&cfg);
                         prev.0.clear();
                     }
@@ -330,8 +339,15 @@ fn overlay() {
 fn startup() {
     sys::lower_priority();
     std::thread::sleep(Duration::from_secs(Config::load().startup_delay as u64));
-    if !sys::overlay_running() {
-        overlay();
+    if sys::overlay_running() {
+        return;
+    }
+    let ids: Vec<u32> = Config::load().stickmen.iter().map(|i| i.id).collect();
+    if ids.is_empty() {
+        overlay(0);
+    }
+    for id in ids {
+        sys::spawn(&["--overlay", id.to_string().as_str()]);
     }
 }
 
@@ -342,7 +358,7 @@ fn main() {
             args.get(2).map_or("dump.ppm", String::as_str),
             args.get(3).is_some_and(|a| a == "fly"),
         ),
-        Some("--overlay") => overlay(),
+        Some("--overlay") => overlay(args.get(2).and_then(|a| a.parse().ok()).unwrap_or(0)),
         Some("--startup") => startup(),
         _ => panel::run(),
     }

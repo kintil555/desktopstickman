@@ -588,10 +588,15 @@ impl Canvas {
         fig.limb(&[hip, sh], CF, bd.torso_w);
         fig.limb(&lim(&q.legs[0]), CF, bd.limb_w);
         let hr = HEADR * bd.head_size;
+        // kepala kecil digeser ke bahu supaya tetap menempel (tidak mengambang)
+        let hd = t(q.head);
+        let (dx, dy) = (sh.x - hd.x, sh.y - hd.y);
+        let k = (HEADR - hr) / dx.hypot(dy).max(0.001);
+        let hc = v(hd.x + dx * k, hd.y + dy * k);
         if bd.head_fill {
-            fig.disc(t(q.head), hr + bd.head_w, CF);
+            fig.disc(hc, hr + bd.head_w, CF);
         } else {
-            fig.ring(t(q.head), hr, CF, bd.head_w);
+            fig.ring(hc, hr, CF, bd.head_w);
         }
         fig.limb(&[sh, t(q.arms[0].0), t(q.arms[0].1)], CF, bd.limb_w);
 

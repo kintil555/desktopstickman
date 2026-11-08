@@ -41,3 +41,8 @@ Sumber lengkap: `Stickman Pixel.html` (cari: pose1, drawFig, spawnRun, DSPR, dra
 - Ikut kursor (hang): tahan klik kanan di stickman = ikut, lepas tombol = turun (hang_key=false). Tombol pintas (default `Alt+C`, hanya bila kursor di atas stickman) = toggle ikut/lepas (hang_key=true).
 - Tombol pintas mendukung modifier (Ctrl/Alt/Shift+tombol, modifier harus persis): sys::parse/combo_down. Panel merekam tombol lewat polling GetAsyncKeyState (sys::held/capture, 40ms, Esc = batal, X = hapus), bukan ketik. Config lama dengan keys.hang kosong tetap kosong (default Alt+C hanya untuk config baru).
 - Kendaraan turun: dust cloud (spawn_land) saat touchdown dihapus; tersisa percikan (spawn_burst).
+
+## Update (daftar stickman, kepala kecil, klik kanan)
+- Config.stickmen: Vec<Inst{id,color,speed,cell,jump,run,fly}>. Tiap stickman = proses `--overlay <id>`; pid file `desktopstickman-<pid>.pid` berisi id. Overlay menimpa config global dgn Inst-nya (Config::apply_inst); id hilang dari daftar (config reload 1 dtk) = proses keluar sendiri. Panel tab Daftar: pilih/hapus/atur; Start = jalankan semua di daftar (kosong -> buat #1 dari global); Tambah + = Inst baru warna hue emas. `--startup` menjalankan semua di daftar.
+- Kepala kecil: Canvas::draw menggeser pusat kepala ke bahu sebesar (HEADR - hr) agar tetap menempel.
+- sys::cursor: tombol kanan logis (SM_SWAPBUTTON -> VK_LBUTTON bila mouse ditukar).

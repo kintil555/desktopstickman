@@ -1,7 +1,7 @@
 //! Panel pengaturan (Slint, gaya pixel GUI). Overlay = proses terpisah (`--overlay`), tetap jalan
 //! saat panel ditutup; Start/Stop lewat pid file.
 use crate::{
-    config::{self, Anim, Body, Config},
+    config::{self, Anim, Body, Config, Inst},
     shadow,
     stick::{Canvas, Stick, V},
     sys, tray,
@@ -198,6 +198,32 @@ fn load(ui: &Panel, c: &Config) {
     ui.set_b_back_k(b.back_k);
     set_keys(ui, c);
     update_grid(ui, &c.skin);
+    refresh_insts(ui, c);
+}
+
+/// Daftar stickman (tab Daftar) + editor untuk yang terpilih.
+fn refresh_insts(ui: &Panel, c: &Config) {
+    let sel = ui.get_sel_id();
+    let mut rows = Vec::new();
+    for i in &c.stickmen {
+        rows.push(ui::InstRow {
+            id: i.id as i32,
+            name: format!("Stickman #{}", i.id).into(),
+            color: Color::from_rgb_u8(i.color[0], i.color[1], i.color[2]),
+            sel: i.id as i32 == sel,
+        });
+    }
+    ui.set_insts(slint::ModelRc::new(slint::VecModel::from(rows)));
+    if let Some(i) = c.stickmen.iter().find(|i| i.id as i32 == sel) {
+        ui.set_inst_hex(config::to_hex(i.color).into());
+        ui.set_inst_speed(i.speed);
+        ui.set_inst_cell(i.cell as f32);
+        ui.set_inst_jump(i.jump);
+        ui.set_inst_run(i.run);
+        ui.set_inst_fly(i.fly);
+    } else {
+        ui.set_sel_id(0);
+    }
 }
 
 /// Grid sprite sheet (tab Skin/Anim): dimuat ulang tiap pengaturan berubah.
@@ -398,26 +424,90 @@ pub fn run() {
                 ui.set_running(false);
                 ui.set_count(0);
             } else {
+                // Start = jalankan semua stickman di daftar (daftar kosong -> buat yang pertama)
                 collect(&ui).save();
-                let ok = sys::spawn("--overlay");
-                ui.set_running(ok);
-                ui.set_count(i32::from(ok));
+                let mut c = Config::load();
+                if c.stickmen.is_empty() {
+                    let i = Inst::from_cfg(1, &c);
+                    c.stickmen.push(i);
+                    c.save();
+                }
+                let mut n = 0;
+                for i in &c.stickmen {
+                    if sys::spawn(&["--overlay", i.id.to_string().as_str()]) {
+                        n += 1;
+                    }
+                }
+                ui.set_running(n > 0);
+                ui.set_count(n);
+                refresh_insts(&ui, &c);
             }
         }
     });
-    // tambah stickman: satu proses overlay lagi (maks. sys::MAX_SPAWN)
+    // tambah stickman baru ke daftar (warna beda) dan langsung jalankan (maks. sys::MAX_SPAWN)
     ui.on_spawn_more({
         let w = ui.as_weak();
         move || {
             let Some(ui) = w.upgrade() else { return };
-            let n = sys::overlay_pids().len();
-            if n < sys::MAX_SPAWN {
-                collect(&ui).save();
-                if sys::spawn("--overlay") {
-                    ui.set_running(true);
-                    ui.set_count(n as i32 + 1);
-                }
+            collect(&ui).save();
+            let mut c = Config::load();
+            if c.stickmen.len() >= sys::MAX_SPAWN {
+                return;
             }
+            let id = c.next_id();
+            let mut i = Inst::from_cfg(id, &c);
+            if !c.stickmen.is_empty() {
+                i.color = hsv2rgb(id as f32 * 137.5, 0.75, 1.0);
+            }
+            c.stickmen.push(i);
+            c.save();
+            if sys::spawn(&["--overlay", id.to_string().as_str()]) {
+                ui.set_running(true);
+                ui.set_count(sys::overlay_pids().len() as i32 + 1);
+            }
+            refresh_insts(&ui, &c);
+        }
+    });
+    ui.on_inst_select({
+        let w = ui.as_weak();
+        move |id| {
+            let Some(ui) = w.upgrade() else { return };
+            ui.set_sel_id(id);
+            refresh_insts(&ui, &Config::load());
+        }
+    });
+    // hapus stickman tertentu: keluar dari daftar + prosesnya dimatikan
+    ui.on_inst_delete({
+        let w = ui.as_weak();
+        move |id| {
+            let Some(ui) = w.upgrade() else { return };
+            let mut c = Config::load();
+            c.stickmen.retain(|i| i.id as i32 != id);
+            c.save();
+            sys::stop_instance(id as u32);
+            let n = sys::overlay_pids().len();
+            ui.set_running(n > 0);
+            ui.set_count(n as i32);
+            refresh_insts(&ui, &c);
+        }
+    });
+    ui.on_inst_changed({
+        let w = ui.as_weak();
+        move || {
+            let Some(ui) = w.upgrade() else { return };
+            let sel = ui.get_sel_id();
+            let mut c = Config::load();
+            if let Some(i) = c.stickmen.iter_mut().find(|i| i.id as i32 == sel) {
+                i.color = config::parse_hex(&ui.get_inst_hex()).unwrap_or(i.color);
+                i.speed = ui.get_inst_speed();
+                i.cell = ui.get_inst_cell().round() as u32;
+                i.jump = ui.get_inst_jump();
+                i.run = ui.get_inst_run();
+                i.fly = ui.get_inst_fly();
+            }
+            c.sanitize();
+            c.save();
+            refresh_insts(&ui, &c);
         }
     });
     // perekam tombol: klik kotak lalu tekan kombinasi apa saja (mis. Alt+C); Esc = batal

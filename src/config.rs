@@ -130,6 +130,48 @@ impl Default for Keys {
     }
 }
 
+/// Satu stickman di daftar: tiap stickman = satu proses overlay dengan pengaturan sendiri.
+#[derive(Serialize, Deserialize, Clone, Debug)]
+#[serde(default)]
+pub struct Inst {
+    pub id: u32,
+    pub color: [u8; 3],
+    pub speed: f32,
+    pub cell: u32,
+    pub jump: bool,
+    pub run: bool,
+    pub fly: bool,
+}
+
+impl Default for Inst {
+    fn default() -> Self {
+        Self {
+            id: 0,
+            color: [238, 122, 28],
+            speed: 1.0,
+            cell: 2,
+            jump: true,
+            run: true,
+            fly: true,
+        }
+    }
+}
+
+impl Inst {
+    /// Salin pengaturan global sebagai nilai awal.
+    pub fn from_cfg(id: u32, c: &Config) -> Self {
+        Self {
+            id,
+            color: c.color,
+            speed: c.speed,
+            cell: c.cell,
+            jump: c.jump,
+            run: c.run,
+            fly: c.fly,
+        }
+    }
+}
+
 #[derive(Serialize, Deserialize, Clone, Debug)]
 #[serde(default)]
 pub struct Config {
@@ -167,6 +209,8 @@ pub struct Config {
     pub skin: Skin,
     pub body: Body,
     pub keys: Keys,
+    /// Daftar stickman; kosong = satu stickman memakai pengaturan global.
+    pub stickmen: Vec<Inst>,
 }
 
 impl Default for Config {
@@ -195,6 +239,7 @@ impl Default for Config {
             skin: Skin::default(),
             body: Body::default(),
             keys: Keys::default(),
+            stickmen: Vec::new(),
         }
     }
 }
@@ -209,7 +254,32 @@ impl Config {
         c
     }
 
+    pub fn next_id(&self) -> u32 {
+        self.stickmen.iter().map(|i| i.id).max().unwrap_or(0) + 1
+    }
+
+    /// Timpa pengaturan global dengan milik stickman `id`; false = id tidak ada di daftar.
+    pub fn apply_inst(&mut self, id: u32) -> bool {
+        if id == 0 {
+            return true;
+        }
+        let Some(i) = self.stickmen.iter().find(|i| i.id == id).cloned() else {
+            return false;
+        };
+        self.color = i.color;
+        self.speed = i.speed;
+        self.cell = i.cell;
+        self.jump = i.jump;
+        self.run = i.run;
+        self.fly = i.fly;
+        true
+    }
+
     pub fn sanitize(&mut self) {
+        for i in &mut self.stickmen {
+            i.speed = i.speed.clamp(0.1, 3.0);
+            i.cell = i.cell.clamp(1, 8);
+        }
         self.cell = self.cell.clamp(1, 8);
         self.speed = self.speed.clamp(0.1, 3.0);
         self.volume = self.volume.clamp(0.0, 1.0);

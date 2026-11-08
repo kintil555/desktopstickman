@@ -229,6 +229,13 @@ component KeyRow inherits Rectangle {
     }
 }
 
+export struct InstRow {
+    id: int,
+    name: string,
+    color: color,
+    sel: bool,
+}
+
 export component Panel inherits Window {
     title: "Desktop Stickman";
     width: 940px;
@@ -313,6 +320,15 @@ export component Panel inherits Window {
     // 0 = tidak merekam; 1..4 = hang/jump/fly/hide sedang merekam
     in-out property <int> recording: 0;
     in-out property <int> count: 0;
+    // Daftar stickman
+    in-out property <[InstRow]> insts;
+    in-out property <int> sel-id: 0;
+    in-out property <string> inst-hex;
+    in-out property <float> inst-speed: 1;
+    in-out property <float> inst-cell: 2;
+    in-out property <bool> inst-jump: true;
+    in-out property <bool> inst-run: true;
+    in-out property <bool> inst-fly: true;
 
     callback toggle();
     callback changed();
@@ -326,6 +342,9 @@ export component Panel inherits Window {
     callback keys-accepted();
     callback record(int);
     callback spawn-more();
+    callback inst-select(int);
+    callback inst-delete(int);
+    callback inst-changed();
 
     Image {
         source: @image-url("px/gui.png", nine-slice(6));
@@ -375,6 +394,7 @@ export component Panel inherits Window {
             PxButton { text: "Skin"; size: 15px; active: root.tab == 3; clicked => { root.tab = 3; } }
             PxButton { text: "Anim"; size: 15px; active: root.tab == 4; clicked => { root.tab = 4; } }
             PxButton { text: "Tombol"; size: 15px; active: root.tab == 7; clicked => { root.tab = 7; } }
+            PxButton { text: "Daftar"; size: 15px; active: root.tab == 8; clicked => { root.tab = 8; } }
             PxButton { text: "Sistem"; size: 15px; active: root.tab == 5; clicked => { root.tab = 5; } }
         }
 
@@ -624,6 +644,40 @@ export component Panel inherits Window {
                 KeyRow { value: root.key-fly; rec: root.recording == 3; pick => { root.record(root.recording == 3 ? 0 : 3); } clear => { root.recording = 0; root.key-fly = ""; root.keys-accepted(); } }
                 Label { text: "Sembunyikan / tampilkan stickman"; }
                 KeyRow { value: root.key-hide; rec: root.recording == 4; pick => { root.record(root.recording == 4 ? 0 : 4); } clear => { root.recording = 0; root.key-hide = ""; root.keys-accepted(); } }
+            }
+
+            if root.tab == 8 : VerticalLayout {
+                spacing: 4px;
+                alignment: start;
+                Label { text: "Daftar stickman. Tambah + (bawah) = stickman baru."; }
+                Flickable {
+                    height: 150px;
+                    VerticalLayout {
+                        spacing: 4px;
+                        for r in root.insts : HorizontalLayout {
+                            height: 32px;
+                            spacing: 6px;
+                            Rectangle { width: 24px; background: r.color; }
+                            PxButton { text: r.name; active: r.sel; clicked => { root.inst-select(r.id); } }
+                            PxButton { text: "Hapus"; width: 80px; clicked => { root.inst-delete(r.id); } }
+                        }
+                    }
+                }
+                if root.sel-id == 0 : Label { text: "Pilih stickman untuk mengatur warna dan lainnya."; }
+                if root.sel-id != 0 : VerticalLayout {
+                    spacing: 4px;
+                    Label { text: "Warna (hex, tekan Enter)"; }
+                    PxInput { text <=> root.inst-hex; accepted => { root.inst-changed(); } }
+                    Label { text: "Kecepatan: " + Math.round(root.inst-speed * 10) / 10; }
+                    PxSlider { minimum: 0.1; maximum: 3; value <=> root.inst-speed; released => { root.inst-changed(); } }
+                    Label { text: "Skala sel (px): " + Math.round(root.inst-cell); }
+                    PxSlider { minimum: 1; maximum: 8; value <=> root.inst-cell; released => { root.inst-changed(); } }
+                    HorizontalLayout {
+                        PxCheck { text: "Lompat"; checked <=> root.inst-jump; toggled => { root.inst-changed(); } }
+                        PxCheck { text: "Lari"; checked <=> root.inst-run; toggled => { root.inst-changed(); } }
+                        PxCheck { text: "Terbang"; checked <=> root.inst-fly; toggled => { root.inst-changed(); } }
+                    }
+                }
             }
 
             if root.tab == 5 : VerticalLayout {

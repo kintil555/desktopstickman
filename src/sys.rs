@@ -22,8 +22,9 @@ fn pid_file(pid: u32) -> PathBuf {
     dir().join(format!("{NAME}-{pid}.pid"))
 }
 
-pub fn write_pid() {
-    let _ = fs::write(pid_file(std::process::id()), "");
+/// File pid berisi id stickman (0 = overlay lama tanpa daftar).
+pub fn write_pid(id: u32) {
+    let _ = fs::write(pid_file(std::process::id()), id.to_string());
 }
 
 pub fn clear_pid() {
@@ -72,8 +73,8 @@ fn alive(pid: u32) -> bool {
     out.is_some_and(|s| s.contains(&name))
 }
 
-/// PID semua overlay yang masih hidup (file pid basi dihapus).
-pub fn overlay_pids() -> Vec<u32> {
+/// `(pid, id stickman)` semua overlay yang masih hidup (file pid basi dihapus).
+fn overlay_list() -> Vec<(u32, u32)> {
     let Ok(rd) = fs::read_dir(dir()) else {
         return Vec::new();
     };
@@ -89,7 +90,11 @@ pub fn overlay_pids() -> Vec<u32> {
             continue;
         };
         if alive(pid) {
-            v.push(pid);
+            let id = fs::read_to_string(e.path())
+                .ok()
+                .and_then(|s| s.trim().parse().ok())
+                .unwrap_or(0);
+            v.push((pid, id));
         } else {
             let _ = fs::remove_file(e.path());
         }
@@ -97,29 +102,46 @@ pub fn overlay_pids() -> Vec<u32> {
     v
 }
 
+pub fn overlay_pids() -> Vec<u32> {
+    overlay_list().into_iter().map(|(p, _)| p).collect()
+}
+
 /// Cek sekali (tanpa polling): dipanggil saat panel dibuka dan saat tombol ditekan.
 pub fn overlay_running() -> bool {
     !overlay_pids().is_empty()
 }
 
+fn kill(pid: u32) {
+    let p = pid.to_string();
+    #[cfg(windows)]
+    let _ = run(Command::new("taskkill").args(["/PID", p.as_str(), "/F"]));
+    #[cfg(not(windows))]
+    let _ = run(Command::new("kill").arg(p.as_str()));
+    let _ = fs::remove_file(pid_file(pid));
+}
+
 pub fn stop_overlay() {
     for pid in overlay_pids() {
-        let p = pid.to_string();
-        #[cfg(windows)]
-        let _ = run(Command::new("taskkill").args(["/PID", p.as_str(), "/F"]));
-        #[cfg(not(windows))]
-        let _ = run(Command::new("kill").arg(p.as_str()));
-        let _ = fs::remove_file(pid_file(pid));
+        kill(pid);
+    }
+}
+
+/// Matikan satu stickman (proses overlay dengan id tersebut).
+pub fn stop_instance(id: u32) {
+    for (pid, i) in overlay_list() {
+        if i == id {
+            kill(pid);
+        }
     }
 }
 
 /// Jalankan diri sendiri dengan `arg` sebagai proses terlepas (hidup setelah panel ditutup).
-pub fn spawn(arg: &str) -> bool {
+pub fn spawn(args: &[&str]) -> bool {
     let Ok(exe) = std::env::current_exe() else {
         return false;
     };
     let mut c = Command::new(exe);
-    c.arg(arg)
+    c.args(args)
         .stdin(Stdio::null())
         .stdout(Stdio::null())
         .stderr(Stdio::null());
@@ -198,13 +220,18 @@ pub fn cursor() -> Option<(i32, i32, bool)> {
     unsafe {
         use windows_sys::Win32::{
             Foundation::POINT,
-            UI::{Input::KeyboardAndMouse::GetAsyncKeyState, WindowsAndMessaging::GetCursorPos},
+            UI::{
+                Input::KeyboardAndMouse::GetAsyncKeyState,
+                WindowsAndMessaging::{GetCursorPos, GetSystemMetrics},
+            },
         };
         let mut p = POINT { x: 0, y: 0 };
         if GetCursorPos(&mut p) == 0 {
             return None;
         }
-        Some((p.x, p.y, GetAsyncKeyState(0x02) < 0)) // VK_RBUTTON
+        // tombol kanan logis: bila tombol mouse ditukar (SM_SWAPBUTTON), kanan = tombol fisik kiri
+        let btn = 0x02 - i32::from(GetSystemMetrics(23) != 0);
+        Some((p.x, p.y, GetAsyncKeyState(btn) < 0))
     }
     #[cfg(not(windows))]
     None
