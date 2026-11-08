@@ -21,13 +21,11 @@ pub fn load(path: &str) -> Option<Sheet> {
     let src = &buf[..info.buffer_size()];
     let px: Vec<u8> = match info.color_type {
         png::ColorType::Rgba => src.to_vec(),
-        png::ColorType::Rgb => src
-            .chunks_exact(3)
-            .flat_map(|p| [p[0], p[1], p[2], 255])
+        png::ColorType::Rgb => (0..src.len() / 3)
+            .flat_map(|i| [src[i * 3], src[i * 3 + 1], src[i * 3 + 2], 255])
             .collect(),
-        png::ColorType::GrayscaleAlpha => src
-            .chunks_exact(2)
-            .flat_map(|p| [p[0], p[0], p[0], p[1]])
+        png::ColorType::GrayscaleAlpha => (0..src.len() / 2)
+            .flat_map(|i| [src[i * 2], src[i * 2], src[i * 2], src[i * 2 + 1]])
             .collect(),
         png::ColorType::Grayscale => src.iter().flat_map(|&g| [g, g, g, 255]).collect(),
         png::ColorType::Indexed => return None,
