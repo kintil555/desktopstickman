@@ -1,7 +1,8 @@
 # NOTES untuk AI berikutnya
 
 ## Status
-Hanya kerangka: Cargo.toml, stub src/main.rs, CI (.github/workflows/ci.yml), sprite kendaraan di assets/ (tsr_body/jb/jf.png, 59x59, diekstrak dari `Stickman Pixel.html`). **Engine belum ditulis.**
+Milestone 1 selesai: overlay winit+softbuffer (src/main.rs), gait IK + rasterizer sel (src/stick.rs), config JSON `desktopstickman.json` (src/config.rs), state Idle/Walk/Run + lompat acak. Tes visual headless: `desktopstickman --dump out.ppm`.
+**Belum:** Windows alpha per-piksel (softbuffer, belum diuji; fallback UpdateLayeredWindow), panel Slint, audio, dust, kendaraan, tooltip/quit (jendela click-through; berhenti via kill proses). clippy belum dijalankan lokal.
 
 ## Rencana (keputusan sudah diambil)
 - Overlay: `winit` + `softbuffer`, jendela kecil (~320x160px) transparan, tanpa dekorasi, always-on-top, `set_cursor_hittest(false)`; jendela dipindah mengikuti stickman. Catatan: softbuffer di Windows mungkin tak mendukung alpha per-piksel; cek, kalau gagal pakai UpdateLayeredWindow.
