@@ -117,7 +117,6 @@ pub fn stop_overlay() {
     }
 }
 
-
 /// Jalankan diri sendiri dengan `arg` sebagai proses terlepas (hidup setelah panel ditutup).
 pub fn spawn(args: &[&str]) -> bool {
     let Ok(exe) = std::env::current_exe() else {

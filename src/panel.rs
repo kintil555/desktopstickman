@@ -251,9 +251,10 @@ fn add_item(ui: &Panel, path: &str) {
     }
     let mut c = Config::load();
     let id = c.next_item_id();
-    let name = std::path::Path::new(path)
-        .file_stem()
-        .map_or_else(|| format!("item {id}"), |s| s.to_string_lossy().into_owned());
+    let name = std::path::Path::new(path).file_stem().map_or_else(
+        || format!("item {id}"),
+        |s| s.to_string_lossy().into_owned(),
+    );
     c.items.push(Item {
         id,
         name,
