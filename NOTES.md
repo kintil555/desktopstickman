@@ -35,3 +35,9 @@ Sumber lengkap: `Stickman Pixel.html` (cari: pose1, drawFig, spawnRun, DSPR, dra
 - Panel 940x700: kiri pengaturan (tab Umum/Warna/Shadow/Model/Skin/Anim/Tombol/Sistem), kanan pratinjau live (src/panel.rs `preview`, Stick::demo, ~30 fps, hanya saat jendela terlihat). Tombol bawah tinggi tetap 44px (sebelumnya meluas & menutupi isi). Tab Model = `Config.body` (kepala terisi/ukuran, tebal garis, outline, shading, terang sisi belakang) dipakai `Canvas::draw`. Tab Tombol = `Config.keys` (hang/jump/fly/hide, global lewat GetAsyncKeyState, kosong = nonaktif; sys::vk/key_down).
 - VFX kendaraan (BELUM di-build): asap api (fx::Smoke, 70 maks), glow additive di sumbu api (veh::glow), tarikan partikel saat kendaraan dipanggil (fx::spawn_summon 0.18s) dan ledakan percikan saat turun (fx::spawn_burst). Belum: tilt kendaraan.
 - Drop shadow pixel: topeng keras alpha datar; `shadow_blur` = pelebaran sel (default 0).
+
+## Update (multi-spawn, ikut kursor, perekam tombol — BELUM di-build, cek CI)
+- Banyak stickman = banyak proses `--overlay`; pid per proses `desktopstickman-<pid>.pid` (sys::overlay_pids, maks sys::MAX_SPAWN=12). Panel: tombol "Tambah +" = spawn lagi, Stop = kill semua. Posisi awal & seed acak per proses.
+- Ikut kursor (hang): tahan klik kanan di stickman = ikut, lepas tombol = turun (hang_key=false). Tombol pintas (default `Alt+C`, hanya bila kursor di atas stickman) = toggle ikut/lepas (hang_key=true).
+- Tombol pintas mendukung modifier (Ctrl/Alt/Shift+tombol, modifier harus persis): sys::parse/combo_down. Panel merekam tombol lewat polling GetAsyncKeyState (sys::held/capture, 40ms, Esc = batal, X = hapus), bukan ketik. Config lama dengan keys.hang kosong tetap kosong (default Alt+C hanya untuk config baru).
+- Kendaraan turun: dust cloud (spawn_land) saat touchdown dihapus; tersisa percikan (spawn_burst).

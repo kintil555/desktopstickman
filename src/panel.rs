@@ -7,7 +7,11 @@ use crate::{
     sys, tray,
 };
 use slint::{Color, ComponentHandle, Image, Rgba8Pixel, SharedPixelBuffer};
-use std::time::{Duration, Instant};
+use std::{
+    cell::RefCell,
+    rc::Rc,
+    time::{Duration, Instant},
+};
 
 mod ui {
     #![allow(deprecated, clippy::all, unused)]
@@ -270,7 +274,9 @@ pub fn run() {
     let ui = Panel::new().expect("panel");
     load(&ui, &Config::load());
     ui.set_wheel(wheel_image());
-    ui.set_running(sys::overlay_running());
+    let n = sys::overlay_pids().len();
+    ui.set_running(n > 0);
+    ui.set_count(n as i32);
 
     ui.on_changed({
         let w = ui.as_weak();
@@ -370,12 +376,67 @@ pub fn run() {
             if sys::overlay_running() {
                 sys::stop_overlay();
                 ui.set_running(false);
+                ui.set_count(0);
             } else {
                 collect(&ui).save();
-                ui.set_running(sys::spawn("--overlay"));
+                let ok = sys::spawn("--overlay");
+                ui.set_running(ok);
+                ui.set_count(i32::from(ok));
             }
         }
     });
+    // tambah stickman: satu proses overlay lagi (maks. sys::MAX_SPAWN)
+    ui.on_spawn_more({
+        let w = ui.as_weak();
+        move || {
+            let Some(ui) = w.upgrade() else { return };
+            let n = sys::overlay_pids().len();
+            if n < sys::MAX_SPAWN {
+                collect(&ui).save();
+                if sys::spawn("--overlay") {
+                    ui.set_running(true);
+                    ui.set_count(n as i32 + 1);
+                }
+            }
+        }
+    });
+    // perekam tombol: klik kotak lalu tekan kombinasi apa saja (mis. Alt+C); Esc = batal
+    let rec: Rc<RefCell<Vec<u32>>> = Rc::default();
+    ui.on_record({
+        let (w, rec) = (ui.as_weak(), rec.clone());
+        move |n| {
+            let Some(ui) = w.upgrade() else { return };
+            ui.set_recording(n);
+            *rec.borrow_mut() = sys::held();
+        }
+    });
+    let rec_timer = slint::Timer::default();
+    let rec_tick = {
+        let w = ui.as_weak();
+        move || {
+            let Some(ui) = w.upgrade() else { return };
+            let n = ui.get_recording();
+            if n == 0 {
+                return;
+            }
+            if sys::key_down(0x1B) {
+                ui.set_recording(0);
+                return;
+            }
+            let Some(name) = sys::capture(&mut rec.borrow_mut()) else { return };
+            match n {
+                1 => ui.set_key_hang(name.into()),
+                2 => ui.set_key_jump(name.into()),
+                3 => ui.set_key_fly(name.into()),
+                _ => ui.set_key_hide(name.into()),
+            }
+            ui.set_recording(0);
+            let c = collect(&ui);
+            c.save();
+            set_keys(&ui, &c);
+        }
+    };
+    rec_timer.start(slint::TimerMode::Repeated, Duration::from_millis(40), rec_tick);
     ui.on_quit_panel(|| {
         let _ = slint::quit_event_loop();
     });

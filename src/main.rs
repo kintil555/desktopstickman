@@ -36,7 +36,7 @@ const FEET_Y: f32 = 225.0;
 fn seed() -> u32 {
     std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
-        .map_or(1, |d| d.subsec_nanos())
+        .map_or(1, |d| d.subsec_nanos() ^ std::process::id().wrapping_mul(2_654_435_761))
 }
 
 fn render(s: &Stick, cfg: &Config, sheet: Option<&skin::Sheet>) -> Canvas {
@@ -171,13 +171,16 @@ fn overlay() {
     let max_x = mon_size.width as f32;
     let max_alt = (mon_size.height as i32 - cfg.floor_offset - 250).max(100) as f32;
     let mut rng = Rng::new(seed());
-    let mut s = Stick::new(max_x / 2.0);
+    // banyak stickman = banyak proses; posisi awal acak supaya tidak bertumpuk
+    let mut s = Stick::new(max_x * (0.1 + 0.8 * rng.f()));
     let (mut next, mut last, mut chk) = (Instant::now(), Instant::now(), Instant::now());
     // hemat: lewati present bila gambar & posisi sama; idle di lantai cukup ~30 fps
     let mut prev: (Vec<u32>, PhysicalPosition<i32>) = (Vec::new(), PhysicalPosition::new(0, 0));
     let mut frame = Duration::from_millis(16);
     let mut hang: Option<Hang> = None;
     let mut rb_prev = false;
+    // true = ikut kursor lewat tombol pintas (toggle); false = lewat tahan klik kanan
+    let mut hang_key = false;
     let mut key_prev = [false; 4];
     let mut shown = true;
 
@@ -213,7 +216,7 @@ fn overlay() {
                     &cfg.keys.fly,
                     &cfg.keys.hide,
                 ]
-                .map(|k| sys::vk(k).is_some_and(sys::key_down));
+                .map(|k| sys::combo_down(k.as_str()));
                 let edge: [bool; 4] = std::array::from_fn(|i| kd[i] && !key_prev[i]);
                 key_prev = kd;
                 if edge[1] {
@@ -226,32 +229,36 @@ fn overlay() {
                     shown = !shown;
                     win.set_visible(shown);
                 }
-                // klik kanan pada stickman = gantung di kursor; klik kanan lagi = lepas
-                if let Some((cx, cy, down, clicked)) = cfg.hang.then(sys::cursor).flatten() {
-                    let press = clicked || (down && !rb_prev) || edge[0];
+                // ikut kursor: tahan klik kanan di stickman (lepas = turun), atau tombol pintas
+                // di atas stickman (tekan lagi = lepas)
+                if let Some((cx, cy, down)) = cfg.hang.then(sys::cursor).flatten() {
+                    let press = down && !rb_prev;
                     rb_prev = down;
                     let cur = V {
                         x: cx as f32,
                         y: cy as f32,
                     };
-                    if press {
-                        if hang.is_none() {
-                            let feet = V {
-                                x: (prev.1.x + WIN_W as i32 / 2) as f32,
-                                y: (prev.1.y + FEET_Y as i32) as f32,
-                            };
-                            let hit = edge[0]
-                                || ((cur.x - feet.x).abs() <= 30.0
-                                    && cur.y >= feet.y - 100.0
-                                    && cur.y <= feet.y + 8.0);
-                            if hit && s.fly == Fly::No {
-                                hang = Some(Hang::grab(cur, feet, s.face));
-                            }
-                        } else if let Some(h) = hang.as_mut() {
-                            if !h.falling() && h.age > 0.3 {
-                                h.release();
-                                s.begin_fall();
-                            }
+                    if hang.is_none() {
+                        let feet = V {
+                            x: (prev.1.x + WIN_W as i32 / 2) as f32,
+                            y: (prev.1.y + FEET_Y as i32) as f32,
+                        };
+                        let hit = (cur.x - feet.x).abs() <= 30.0
+                            && cur.y >= feet.y - 100.0
+                            && cur.y <= feet.y + 8.0;
+                        if (press || edge[0]) && hit && s.fly == Fly::No {
+                            hang = Some(Hang::grab(cur, feet, s.face));
+                            hang_key = !press;
+                        }
+                    } else if let Some(h) = hang.as_mut() {
+                        let drop = if hang_key {
+                            edge[0] && h.age > 0.3
+                        } else {
+                            !down
+                        };
+                        if drop && !h.falling() {
+                            h.release();
+                            s.begin_fall();
                         }
                     }
                     if let Some(h) = hang.as_mut().filter(|h| !h.falling()) {

@@ -207,6 +207,28 @@ component Label inherits Text {
     height: 22px;
 }
 
+component KeyRow inherits Rectangle {
+    in property <string> value;
+    in property <bool> rec;
+    callback pick();
+    callback clear();
+    height: 36px;
+    HorizontalLayout {
+        spacing: 6px;
+        PxButton {
+            text: root.rec ? "Tekan tombol... (Esc = batal)" : (root.value == "" ? "Belum diatur - klik lalu tekan tombol" : root.value);
+            size: 16px;
+            active: root.rec;
+            clicked => { root.pick(); }
+        }
+        PxButton {
+            text: "X";
+            width: 44px;
+            clicked => { root.clear(); }
+        }
+    }
+}
+
 export component Panel inherits Window {
     title: "Desktop Stickman";
     width: 940px;
@@ -286,6 +308,9 @@ export component Panel inherits Window {
     in-out property <string> key-jump;
     in-out property <string> key-fly;
     in-out property <string> key-hide;
+    // 0 = tidak merekam; 1..4 = hang/jump/fly/hide sedang merekam
+    in-out property <int> recording: 0;
+    in-out property <int> count: 0;
 
     callback toggle();
     callback changed();
@@ -297,6 +322,8 @@ export component Panel inherits Window {
     callback autostart-changed();
     callback quit-panel();
     callback keys-accepted();
+    callback record(int);
+    callback spawn-more();
 
     Image {
         source: @image-url("px/gui.png", nine-slice(6));
@@ -330,7 +357,7 @@ export component Panel inherits Window {
             }
             Text {
                 x: parent.width - self.width - 14px;
-                text: root.running ? "jalan" : "berhenti";
+                text: root.running ? "jalan (" + root.count + ")" : "berhenti";
                 color: root.running ? Pal.acc : Pal.mut;
                 font-size: 16px;
                 vertical-alignment: center;
@@ -375,7 +402,9 @@ export component Panel inherits Window {
                     PxCheck { text: "Suara"; checked <=> root.sound; toggled => { root.changed(); } }
                     PxCheck { text: "Gantung"; checked <=> root.hang; toggled => { root.changed(); } }
                 }
-                Label { text: "Klik kanan stickman = bergantung di kursor (Windows). Klik kanan lagi = lepas."; }
+                Label { text: "Tahan klik kanan di stickman = ikut kursor, lepas = turun."; }
+                Label { text: "Tombol pintas (tab Tombol) di atas stickman = ikut, tekan lagi = lepas."; }
+                Label { text: "Tombol Tambah (bawah) = spawn stickman lagi."; }
             }
 
             if root.tab == 1 : VerticalLayout {
@@ -582,18 +611,17 @@ export component Panel inherits Window {
             if root.tab == 7 : VerticalLayout {
                 spacing: 4px;
                 alignment: start;
-                Label { text: "Tombol pintas global (Windows). Kosong = nonaktif."; }
-                Label { text: "Nama: A-Z, 0-9, F1-F12, Space, Tab, Home, End,"; }
-                Label { text: "Insert, Delete, PageUp, PageDown. Tekan Enter untuk simpan."; }
+                Label { text: "Tombol pintas global (Windows). Klik kotak, lalu tekan"; }
+                Label { text: "tombol/kombinasi (mis. Alt+C). X = hapus."; }
                 Rectangle { height: 6px; }
-                Label { text: "Gantung di kursor (tekan lagi = lepas)"; }
-                PxInput { text <=> root.key-hang; accepted => { root.keys-accepted(); } }
+                Label { text: "Ikut kursor (arahkan ke stickman, tekan lagi = lepas)"; }
+                KeyRow { value: root.key-hang; rec: root.recording == 1; pick => { root.record(root.recording == 1 ? 0 : 1); } clear => { root.recording = 0; root.key-hang = ""; root.keys-accepted(); } }
                 Label { text: "Lompat"; }
-                PxInput { text <=> root.key-jump; accepted => { root.keys-accepted(); } }
+                KeyRow { value: root.key-jump; rec: root.recording == 2; pick => { root.record(root.recording == 2 ? 0 : 2); } clear => { root.recording = 0; root.key-jump = ""; root.keys-accepted(); } }
                 Label { text: "Panggil kendaraan"; }
-                PxInput { text <=> root.key-fly; accepted => { root.keys-accepted(); } }
+                KeyRow { value: root.key-fly; rec: root.recording == 3; pick => { root.record(root.recording == 3 ? 0 : 3); } clear => { root.recording = 0; root.key-fly = ""; root.keys-accepted(); } }
                 Label { text: "Sembunyikan / tampilkan stickman"; }
-                PxInput { text <=> root.key-hide; accepted => { root.keys-accepted(); } }
+                KeyRow { value: root.key-hide; rec: root.recording == 4; pick => { root.record(root.recording == 4 ? 0 : 4); } clear => { root.recording = 0; root.key-hide = ""; root.keys-accepted(); } }
             }
 
             if root.tab == 5 : VerticalLayout {
@@ -617,6 +645,10 @@ export component Panel inherits Window {
                 text: root.running ? "Stop" : "Start";
                 accent: true;
                 clicked => { root.toggle(); }
+            }
+            PxButton {
+                text: "Tambah +";
+                clicked => { root.spawn-more(); }
             }
             PxButton {
                 text: "Tutup panel";

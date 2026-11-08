@@ -110,13 +110,24 @@ impl Default for Body {
 }
 
 /// Tombol pintas global (Windows). Nama tombol, kosong = nonaktif.
-#[derive(Serialize, Deserialize, Clone, Debug, Default)]
+#[derive(Serialize, Deserialize, Clone, Debug)]
 #[serde(default)]
 pub struct Keys {
     pub hang: String,
     pub jump: String,
     pub fly: String,
     pub hide: String,
+}
+
+impl Default for Keys {
+    fn default() -> Self {
+        Self {
+            hang: "Alt+C".into(),
+            jump: String::new(),
+            fly: String::new(),
+            hide: String::new(),
+        }
+    }
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
@@ -221,7 +232,7 @@ impl Config {
             &mut self.keys.hide,
         ] {
             *k = k.trim().to_string();
-            if crate::sys::vk(k).is_none() {
+            if crate::sys::parse(k).is_none() {
                 k.clear();
             }
         }

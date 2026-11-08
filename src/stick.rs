@@ -332,7 +332,6 @@ impl Stick {
                     self.timer = 1.0;
                     self.mode = Mode::Idle;
                     if cfg.dust {
-                        fx::spawn_land(&mut self.fx, self.x, 0.7, rng);
                         fx::spawn_burst(&mut self.sparks, self.x, 30.0, rng);
                     }
                 }
