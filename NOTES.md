@@ -51,3 +51,7 @@ Sumber lengkap: `Stickman Pixel.html` (cari: pose1, drawFig, spawnRun, DSPR, dra
 - `--overlay` = SATU proses: satu event loop, `Vec<Agent>` (jendela + Stick + Hang + cfg per stickman), `Env` bersama (monitor, skin, tepi tombol per tick, `taken` = hanya satu stickman boleh dibawa kursor). Tick bersama 16 ms (ada yang gerak) / 33 ms (semua diam).
 - Config dicek tiap 0,5 dtk: `sync_agents` membuat/menutup jendela sesuai `stickmen`; daftar kosong = proses berhenti. Panel Tambah/Hapus cukup ubah config (proses hanya di-spawn bila belum jalan). Daftar kosong saat overlay mulai -> overlay membuat #1 dari pengaturan global.
 - pid file kembali satu per proses (`desktopstickman-<pid>.pid`), tanpa id.
+
+## Update (pengaturan per stickman)
+- `Inst { id, cfg: Config }`: tiap stickman menyimpan salinan pengaturan tampilan/perilaku (`Config::copy_look`: cell, speed, color, jump/run/fly/dust, shadow*, skin, body). Sisanya global (keys, floor_offset, hang, sound, autostart, ...). Overlay: `apply_inst` menimpa look dari Inst.
+- Panel: tab Daftar memilih target (Default = id 0, atau Stickman #N). SEMUA tab lain mengatur target terpilih (`save_ui` menulis ke Inst / global; `effective(id)` memuat ke UI). Header kanan: "Mengatur: <target>". Default = template stickman baru.

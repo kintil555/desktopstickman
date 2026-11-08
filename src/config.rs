@@ -130,45 +130,30 @@ impl Default for Keys {
     }
 }
 
-/// Satu stickman di daftar: tiap stickman = satu proses overlay dengan pengaturan sendiri.
+/// Satu stickman di daftar, dengan pengaturan sendiri (warna, model, shadow, skin, ...).
 #[derive(Serialize, Deserialize, Clone, Debug)]
 #[serde(default)]
 pub struct Inst {
     pub id: u32,
-    pub color: [u8; 3],
-    pub speed: f32,
-    pub cell: u32,
-    pub jump: bool,
-    pub run: bool,
-    pub fly: bool,
+    /// Pengaturan khas stickman ini; hanya bagian `Config::copy_look` yang dipakai.
+    pub cfg: Config,
 }
 
 impl Default for Inst {
     fn default() -> Self {
         Self {
             id: 0,
-            color: [238, 122, 28],
-            speed: 1.0,
-            cell: 2,
-            jump: true,
-            run: true,
-            fly: true,
+            cfg: Config::default(),
         }
     }
 }
 
 impl Inst {
-    /// Salin pengaturan global sebagai nilai awal.
+    /// Salin tampilan/perilaku dari `c` sebagai nilai awal.
     pub fn from_cfg(id: u32, c: &Config) -> Self {
-        Self {
-            id,
-            color: c.color,
-            speed: c.speed,
-            cell: c.cell,
-            jump: c.jump,
-            run: c.run,
-            fly: c.fly,
-        }
+        let mut cfg = c.clone();
+        cfg.stickmen.clear();
+        Self { id, cfg }
     }
 }
 
@@ -263,22 +248,36 @@ impl Config {
         if id == 0 {
             return true;
         }
-        let Some(i) = self.stickmen.iter().find(|i| i.id == id).cloned() else {
+        let Some(inst) = self.stickmen.iter().find(|i| i.id == id) else {
             return false;
         };
-        self.color = i.color;
-        self.speed = i.speed;
-        self.cell = i.cell;
-        self.jump = i.jump;
-        self.run = i.run;
-        self.fly = i.fly;
+        let look = inst.cfg.clone();
+        self.copy_look(&look);
         true
+    }
+
+    /// Pengaturan per stickman (sisanya global: tombol, lantai, autostart, suara, ...).
+    pub fn copy_look(&mut self, o: &Config) {
+        self.cell = o.cell;
+        self.speed = o.speed;
+        self.color = o.color;
+        self.jump = o.jump;
+        self.run = o.run;
+        self.fly = o.fly;
+        self.dust = o.dust;
+        self.shadow = o.shadow;
+        self.shadow_opacity = o.shadow_opacity;
+        self.shadow_dx = o.shadow_dx;
+        self.shadow_dy = o.shadow_dy;
+        self.shadow_blur = o.shadow_blur;
+        self.shadow_color = o.shadow_color;
+        self.skin = o.skin.clone();
+        self.body = o.body.clone();
     }
 
     pub fn sanitize(&mut self) {
         for i in &mut self.stickmen {
-            i.speed = i.speed.clamp(0.1, 3.0);
-            i.cell = i.cell.clamp(1, 8);
+            i.cfg.sanitize();
         }
         self.cell = self.cell.clamp(1, 8);
         self.speed = self.speed.clamp(0.1, 3.0);

@@ -209,35 +209,16 @@ fn refresh_insts(ui: &Panel, c: &Config) {
         rows.push(ui::InstRow {
             id: i.id as i32,
             name: format!("Stickman #{}", i.id).into(),
-            color: Color::from_rgb_u8(i.color[0], i.color[1], i.color[2]),
+            color: Color::from_rgb_u8(i.cfg.color[0], i.cfg.color[1], i.cfg.color[2]),
             sel: i.id as i32 == sel,
         });
     }
     ui.set_insts(slint::ModelRc::new(slint::VecModel::from(rows)));
-    if let Some(i) = c.stickmen.iter().find(|i| i.id as i32 == sel) {
-        ui.set_inst_hex(config::to_hex(i.color).into());
-        ui.set_inst_speed(i.speed);
-        ui.set_inst_cell(i.cell as f32);
-        ui.set_inst_jump(i.jump);
-        ui.set_inst_run(i.run);
-        ui.set_inst_fly(i.fly);
+    if sel > 0 && c.stickmen.iter().any(|i| i.id as i32 == sel) {
+        ui.set_target_name(format!("Stickman #{sel}").into());
     } else {
         ui.set_sel_id(0);
-    }
-}
-
-/// Grid sprite sheet (tab Skin/Anim): dimuat ulang tiap pengaturan berubah.
-fn update_grid(ui: &Panel, k: &config::Skin) {
-    let img = crate::skin::grid_preview(k, 300, 190).map(|(w, h, px)| {
-        let mut buf = SharedPixelBuffer::<Rgba8Pixel>::new(w as u32, h as u32);
-        for (d, p) in buf.make_mut_slice().iter_mut().zip(px.chunks(4)) {
-            *d = Rgba8Pixel::new(p[0], p[1], p[2], p[3]);
-        }
-        Image::from_rgba8(buf)
-    });
-    ui.set_grid_ok(img.is_some());
-    if let Some(i) = img {
-        ui.set_grid_img(i);
+        ui.set_target_name("Default".into());
     }
 }
 
@@ -246,6 +227,33 @@ fn set_keys(ui: &Panel, c: &Config) {
     ui.set_key_jump(c.keys.jump.clone().into());
     ui.set_key_fly(c.keys.fly.clone().into());
     ui.set_key_hide(c.keys.hide.clone().into());
+}
+
+/// Simpan isi panel: tab-tab mengatur stickman terpilih (atau Default bila tidak ada yang dipilih);
+/// pengaturan sistem (tombol, lantai, autostart, ...) selalu global. Mengembalikan isi panel.
+fn save_ui(ui: &Panel) -> Config {
+    let c = collect(ui);
+    let sel = ui.get_sel_id();
+    let mut g = c.clone();
+    if sel > 0 {
+        g.copy_look(&Config::load());
+        if let Some(i) = g.stickmen.iter_mut().find(|i| i.id as i32 == sel) {
+            i.cfg.copy_look(&c);
+        }
+    }
+    g.sanitize();
+    g.save();
+    c
+}
+
+/// Pengaturan yang tampil di tab: Default (id 0) atau milik stickman `id`.
+fn effective(id: i32) -> Config {
+    let mut c = Config::load();
+    if let Some(i) = c.stickmen.iter().find(|i| i.id as i32 == id) {
+        let look = i.cfg.clone();
+        c.copy_look(&look);
+    }
+    c
 }
 
 fn collect(ui: &Panel) -> Config {
@@ -328,8 +336,7 @@ pub fn run() {
         let w = ui.as_weak();
         move || {
             if let Some(ui) = w.upgrade() {
-                let c = collect(&ui);
-                c.save();
+                let c = save_ui(&ui);
                 update_grid(&ui, &c.skin);
             }
         }
@@ -365,7 +372,7 @@ pub fn run() {
                 ui.set_val(v);
                 ui.set_hex(config::to_hex(rgb).into());
                 show_color(&ui, rgb);
-                collect(&ui).save();
+                save_ui(&ui);
             }
         }
     });
@@ -375,7 +382,7 @@ pub fn run() {
             let Some(ui) = w.upgrade() else { return };
             if let Some(rgb) = config::parse_hex(&ui.get_shadow_hex()) {
                 ui.set_shadow_hex(config::to_hex(rgb).into());
-                collect(&ui).save();
+                save_ui(&ui);
             }
         }
     });
@@ -391,8 +398,7 @@ pub fn run() {
             ) {
                 ui.set_skin_path(f.to_string_lossy().into_owned().into());
                 ui.set_skin_on(true);
-                let c = collect(&ui);
-                c.save();
+                let c = save_ui(&ui);
                 update_grid(&ui, &c.skin);
             }
             #[cfg(not(windows))]
@@ -403,8 +409,7 @@ pub fn run() {
         let w = ui.as_weak();
         move || {
             if let Some(ui) = w.upgrade() {
-                let c = collect(&ui);
-                c.save();
+                let c = save_ui(&ui);
                 sys::autostart(c.autostart);
             }
         }
@@ -413,8 +418,7 @@ pub fn run() {
         let w = ui.as_weak();
         move || {
             if let Some(ui) = w.upgrade() {
-                let c = collect(&ui);
-                c.save();
+                let c = save_ui(&ui);
                 set_keys(&ui, &c);
             }
         }
@@ -429,7 +433,7 @@ pub fn run() {
                 ui.set_count(0);
             } else {
                 // Start = satu proses overlay untuk semua stickman di daftar (kosong -> buat #1)
-                collect(&ui).save();
+                save_ui(&ui);
                 let mut c = Config::load();
                 if c.stickmen.is_empty() {
                     let i = Inst::from_cfg(1, &c);
@@ -449,7 +453,7 @@ pub fn run() {
         let w = ui.as_weak();
         move || {
             let Some(ui) = w.upgrade() else { return };
-            collect(&ui).save();
+            save_ui(&ui);
             let mut c = Config::load();
             if c.stickmen.len() >= sys::MAX_SPAWN {
                 return;
@@ -457,7 +461,7 @@ pub fn run() {
             let id = c.next_id();
             let mut i = Inst::from_cfg(id, &c);
             if !c.stickmen.is_empty() {
-                i.color = hsv2rgb(id as f32 * 137.5, 0.75, 1.0);
+                i.cfg.color = hsv2rgb(id as f32 * 137.5, 0.75, 1.0);
             }
             c.stickmen.push(i);
             c.save();
@@ -473,10 +477,10 @@ pub fn run() {
         move |id| {
             let Some(ui) = w.upgrade() else { return };
             ui.set_sel_id(id);
-            refresh_insts(&ui, &Config::load());
+            load(&ui, &effective(id));
         }
     });
-    // hapus stickman tertentu: keluar dari daftar + prosesnya dimatikan
+    // hapus stickman tertentu: keluar dari daftar, overlay menutup jendelanya
     ui.on_inst_delete({
         let w = ui.as_weak();
         move |id| {
@@ -484,30 +488,16 @@ pub fn run() {
             let mut c = Config::load();
             c.stickmen.retain(|i| i.id as i32 != id);
             c.save();
-            // overlay membaca config tiap 0,5 dtk: stickman ini ditutup; daftar kosong = berhenti
+            // overlay membaca config tiap 0,5 dtk; daftar kosong = overlay berhenti
             let on = !c.stickmen.is_empty() && sys::overlay_running();
             ui.set_running(on);
             ui.set_count(if on { c.stickmen.len() as i32 } else { 0 });
-            refresh_insts(&ui, &c);
-        }
-    });
-    ui.on_inst_changed({
-        let w = ui.as_weak();
-        move || {
-            let Some(ui) = w.upgrade() else { return };
-            let sel = ui.get_sel_id();
-            let mut c = Config::load();
-            if let Some(i) = c.stickmen.iter_mut().find(|i| i.id as i32 == sel) {
-                i.color = config::parse_hex(&ui.get_inst_hex()).unwrap_or(i.color);
-                i.speed = ui.get_inst_speed();
-                i.cell = ui.get_inst_cell().round() as u32;
-                i.jump = ui.get_inst_jump();
-                i.run = ui.get_inst_run();
-                i.fly = ui.get_inst_fly();
+            if ui.get_sel_id() == id {
+                ui.set_sel_id(0);
+                load(&ui, &c);
+            } else {
+                refresh_insts(&ui, &c);
             }
-            c.sanitize();
-            c.save();
-            refresh_insts(&ui, &c);
         }
     });
     // perekam tombol: klik kotak lalu tekan kombinasi apa saja (mis. Alt+C); Esc = batal
@@ -543,8 +533,7 @@ pub fn run() {
                 _ => ui.set_key_hide(name.into()),
             }
             ui.set_recording(0);
-            let c = collect(&ui);
-            c.save();
+            let c = save_ui(&ui);
             set_keys(&ui, &c);
         }
     };

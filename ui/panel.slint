@@ -323,12 +323,7 @@ export component Panel inherits Window {
     // Daftar stickman
     in-out property <[InstRow]> insts;
     in-out property <int> sel-id: 0;
-    in-out property <string> inst-hex;
-    in-out property <float> inst-speed: 1;
-    in-out property <float> inst-cell: 2;
-    in-out property <bool> inst-jump: true;
-    in-out property <bool> inst-run: true;
-    in-out property <bool> inst-fly: true;
+    in-out property <string> target-name: "Default";
 
     callback toggle();
     callback changed();
@@ -344,7 +339,6 @@ export component Panel inherits Window {
     callback spawn-more();
     callback inst-select(int);
     callback inst-delete(int);
-    callback inst-changed();
 
     Image {
         source: @image-url("px/gui.png", nine-slice(6));
@@ -649,9 +643,10 @@ export component Panel inherits Window {
             if root.tab == 8 : VerticalLayout {
                 spacing: 4px;
                 alignment: start;
-                Label { text: "Daftar stickman. Tambah + (bawah) = stickman baru."; }
+                Label { text: "Pilih stickman: semua tab mengatur yang terpilih."; }
+                PxButton { text: "Default (untuk stickman baru)"; size: 16px; active: root.sel-id == 0; clicked => { root.inst-select(0); } }
                 Flickable {
-                    height: 150px;
+                    height: 200px;
                     VerticalLayout {
                         spacing: 4px;
                         for r in root.insts : HorizontalLayout {
@@ -663,21 +658,7 @@ export component Panel inherits Window {
                         }
                     }
                 }
-                if root.sel-id == 0 : Label { text: "Pilih stickman untuk mengatur warna dan lainnya."; }
-                if root.sel-id != 0 : VerticalLayout {
-                    spacing: 4px;
-                    Label { text: "Warna (hex, tekan Enter)"; }
-                    PxInput { text <=> root.inst-hex; accepted => { root.inst-changed(); } }
-                    Label { text: "Kecepatan: " + Math.round(root.inst-speed * 10) / 10; }
-                    PxSlider { minimum: 0.1; maximum: 3; value <=> root.inst-speed; released => { root.inst-changed(); } }
-                    Label { text: "Skala sel (px): " + Math.round(root.inst-cell); }
-                    PxSlider { minimum: 1; maximum: 8; value <=> root.inst-cell; released => { root.inst-changed(); } }
-                    HorizontalLayout {
-                        PxCheck { text: "Lompat"; checked <=> root.inst-jump; toggled => { root.inst-changed(); } }
-                        PxCheck { text: "Lari"; checked <=> root.inst-run; toggled => { root.inst-changed(); } }
-                        PxCheck { text: "Terbang"; checked <=> root.inst-fly; toggled => { root.inst-changed(); } }
-                    }
-                }
+                Label { text: "Tambah + (bawah) = stickman baru, warna otomatis beda."; }
             }
 
             if root.tab == 5 : VerticalLayout {
@@ -728,7 +709,7 @@ export component Panel inherits Window {
                 }
                 Text {
                     x: 14px;
-                    text: "Pratinjau";
+                    text: "Mengatur: " + root.target-name;
                     color: Pal.acc;
                     font-size: 22px;
                     vertical-alignment: center;
