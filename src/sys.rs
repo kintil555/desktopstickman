@@ -15,16 +15,15 @@ pub fn dir() -> PathBuf {
         .unwrap_or_default()
 }
 
-/// Batas jumlah stickman (satu proses overlay per stickman).
+/// Batas jumlah stickman di daftar (semuanya jalan di satu proses overlay).
 pub const MAX_SPAWN: usize = 12;
 
 fn pid_file(pid: u32) -> PathBuf {
     dir().join(format!("{NAME}-{pid}.pid"))
 }
 
-/// File pid berisi id stickman (0 = overlay lama tanpa daftar).
-pub fn write_pid(id: u32) {
-    let _ = fs::write(pid_file(std::process::id()), id.to_string());
+pub fn write_pid() {
+    let _ = fs::write(pid_file(std::process::id()), "");
 }
 
 pub fn clear_pid() {
@@ -73,8 +72,8 @@ fn alive(pid: u32) -> bool {
     out.is_some_and(|s| s.contains(&name))
 }
 
-/// `(pid, id stickman)` semua overlay yang masih hidup (file pid basi dihapus).
-fn overlay_list() -> Vec<(u32, u32)> {
+/// PID overlay yang masih hidup (file pid basi dihapus).
+pub fn overlay_pids() -> Vec<u32> {
     let Ok(rd) = fs::read_dir(dir()) else {
         return Vec::new();
     };
@@ -90,20 +89,12 @@ fn overlay_list() -> Vec<(u32, u32)> {
             continue;
         };
         if alive(pid) {
-            let id = fs::read_to_string(e.path())
-                .ok()
-                .and_then(|s| s.trim().parse().ok())
-                .unwrap_or(0);
-            v.push((pid, id));
+            v.push(pid);
         } else {
             let _ = fs::remove_file(e.path());
         }
     }
     v
-}
-
-pub fn overlay_pids() -> Vec<u32> {
-    overlay_list().into_iter().map(|(p, _)| p).collect()
 }
 
 /// Cek sekali (tanpa polling): dipanggil saat panel dibuka dan saat tombol ditekan.
@@ -126,14 +117,6 @@ pub fn stop_overlay() {
     }
 }
 
-/// Matikan satu stickman (proses overlay dengan id tersebut).
-pub fn stop_instance(id: u32) {
-    for (pid, i) in overlay_list() {
-        if i == id {
-            kill(pid);
-        }
-    }
-}
 
 /// Jalankan diri sendiri dengan `arg` sebagai proses terlepas (hidup setelah panel ditutup).
 pub fn spawn(args: &[&str]) -> bool {

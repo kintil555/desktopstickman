@@ -46,3 +46,8 @@ Sumber lengkap: `Stickman Pixel.html` (cari: pose1, drawFig, spawnRun, DSPR, dra
 - Config.stickmen: Vec<Inst{id,color,speed,cell,jump,run,fly}>. Tiap stickman = proses `--overlay <id>`; pid file `desktopstickman-<pid>.pid` berisi id. Overlay menimpa config global dgn Inst-nya (Config::apply_inst); id hilang dari daftar (config reload 1 dtk) = proses keluar sendiri. Panel tab Daftar: pilih/hapus/atur; Start = jalankan semua di daftar (kosong -> buat #1 dari global); Tambah + = Inst baru warna hue emas. `--startup` menjalankan semua di daftar.
 - Kepala kecil: Canvas::draw menggeser pusat kepala ke bahu sebesar (HEADR - hr) agar tetap menempel.
 - sys::cursor: tombol kanan logis (SM_SWAPBUTTON -> VK_LBUTTON bila mouse ditukar).
+
+## Update (satu proses, banyak jendela) — menggantikan "satu proses per stickman" di atas
+- `--overlay` = SATU proses: satu event loop, `Vec<Agent>` (jendela + Stick + Hang + cfg per stickman), `Env` bersama (monitor, skin, tepi tombol per tick, `taken` = hanya satu stickman boleh dibawa kursor). Tick bersama 16 ms (ada yang gerak) / 33 ms (semua diam).
+- Config dicek tiap 0,5 dtk: `sync_agents` membuat/menutup jendela sesuai `stickmen`; daftar kosong = proses berhenti. Panel Tambah/Hapus cukup ubah config (proses hanya di-spawn bila belum jalan). Daftar kosong saat overlay mulai -> overlay membuat #1 dari pengaturan global.
+- pid file kembali satu per proses (`desktopstickman-<pid>.pid`), tanpa id.

@@ -316,9 +316,13 @@ pub fn run() {
     let ui = Panel::new().expect("panel");
     load(&ui, &Config::load());
     ui.set_wheel(wheel_image());
-    let n = sys::overlay_pids().len();
-    ui.set_running(n > 0);
-    ui.set_count(n as i32);
+    let on = sys::overlay_running();
+    ui.set_running(on);
+    ui.set_count(if on {
+        Config::load().stickmen.len() as i32
+    } else {
+        0
+    });
 
     ui.on_changed({
         let w = ui.as_weak();
@@ -424,7 +428,7 @@ pub fn run() {
                 ui.set_running(false);
                 ui.set_count(0);
             } else {
-                // Start = jalankan semua stickman di daftar (daftar kosong -> buat yang pertama)
+                // Start = satu proses overlay untuk semua stickman di daftar (kosong -> buat #1)
                 collect(&ui).save();
                 let mut c = Config::load();
                 if c.stickmen.is_empty() {
@@ -432,19 +436,15 @@ pub fn run() {
                     c.stickmen.push(i);
                     c.save();
                 }
-                let mut n = 0;
-                for i in &c.stickmen {
-                    if sys::spawn(&["--overlay", i.id.to_string().as_str()]) {
-                        n += 1;
-                    }
-                }
-                ui.set_running(n > 0);
-                ui.set_count(n);
+                let ok = sys::spawn(&["--overlay"]);
+                ui.set_running(ok);
+                ui.set_count(if ok { c.stickmen.len() as i32 } else { 0 });
                 refresh_insts(&ui, &c);
             }
         }
     });
-    // tambah stickman baru ke daftar (warna beda) dan langsung jalankan (maks. sys::MAX_SPAWN)
+    // tambah stickman ke daftar (warna beda): overlay yang sudah jalan mengambilnya dari config,
+    // bila belum jalan dimulai (maks. sys::MAX_SPAWN)
     ui.on_spawn_more({
         let w = ui.as_weak();
         move || {
@@ -461,9 +461,9 @@ pub fn run() {
             }
             c.stickmen.push(i);
             c.save();
-            if sys::spawn(&["--overlay", id.to_string().as_str()]) {
+            if sys::overlay_running() || sys::spawn(&["--overlay"]) {
                 ui.set_running(true);
-                ui.set_count(sys::overlay_pids().len() as i32 + 1);
+                ui.set_count(c.stickmen.len() as i32);
             }
             refresh_insts(&ui, &c);
         }
@@ -484,10 +484,10 @@ pub fn run() {
             let mut c = Config::load();
             c.stickmen.retain(|i| i.id as i32 != id);
             c.save();
-            sys::stop_instance(id as u32);
-            let n = sys::overlay_pids().len();
-            ui.set_running(n > 0);
-            ui.set_count(n as i32);
+            // overlay membaca config tiap 0,5 dtk: stickman ini ditutup; daftar kosong = berhenti
+            let on = !c.stickmen.is_empty() && sys::overlay_running();
+            ui.set_running(on);
+            ui.set_count(if on { c.stickmen.len() as i32 } else { 0 });
             refresh_insts(&ui, &c);
         }
     });
