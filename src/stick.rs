@@ -413,17 +413,64 @@ impl Canvas {
         });
     }
 
-    /// Gambar sosok; `o` = titik pijak lantai (px kanvas).
+    /// Gambar sosok; `o` = titik pijak lantai (px kanvas). Shading + outline ala `pixelize` di HTML.
     pub fn draw(&mut self, q: &Pose, o: V, cfg: &Config) {
-        let (cf, cb) = (pack(cfg.color_f), pack(cfg.color_b));
+        const CF: u32 = 1;
+        const CB: u32 = 2;
+        let mut fig = Canvas {
+            w: self.w,
+            h: self.h,
+            cell: self.cell,
+            px: vec![0; self.w * self.h],
+        };
         let t = |p: V| v(o.x + p.x, o.y + p.y);
         let (hip, sh) = (t(q.hip), t(q.sh));
         let lim = |s: &(V, V)| [hip, t(s.0), t(s.1)];
-        self.limb(&lim(&q.legs[1]), cb);
-        self.limb(&[sh, t(q.arms[1].0), t(q.arms[1].1)], cb);
-        self.limb(&[hip, sh], cf);
-        self.limb(&lim(&q.legs[0]), cf);
-        self.ring(t(q.head), HEADR, cf);
-        self.limb(&[sh, t(q.arms[0].0), t(q.arms[0].1)], cf);
+        fig.limb(&lim(&q.legs[1]), CB);
+        fig.limb(&[sh, t(q.arms[1].0), t(q.arms[1].1)], CB);
+        fig.limb(&[hip, sh], CF);
+        fig.limb(&lim(&q.legs[0]), CF);
+        fig.ring(t(q.head), HEADR, CF);
+        fig.limb(&[sh, t(q.arms[0].0), t(q.arms[0].1)], CF);
+
+        // turunan warna: selisih sama seperti palet HTML (HI/FS/BS terhadap F/B)
+        let sh_col = |c: [u8; 3], d: [i16; 3]| -> u32 {
+            pack([0, 1, 2].map(|i| (c[i] as i16 + d[i]).clamp(0, 255) as u8))
+        };
+        let (f, b) = (pack(cfg.color_f), pack(cfg.color_b));
+        let hi = sh_col(cfg.color_f, [17, 56, 62]);
+        let fs = sh_col(cfg.color_f, [-24, -22, -14]);
+        let bs = sh_col(cfg.color_b, [-44, -22, -8]);
+        let ol = pack([40, 20, 10]);
+        let (w, h) = (self.w, self.h);
+        for y in 0..h {
+            for x in 0..w {
+                let i = y * w + x;
+                let c = fig.px[i];
+                if c != 0 {
+                    let up = y == 0 || fig.px[i - w] == 0;
+                    let dn = y == h - 1 || fig.px[i + w] == 0;
+                    self.px[i] = if c == CF {
+                        if up {
+                            hi
+                        } else if dn {
+                            fs
+                        } else {
+                            f
+                        }
+                    } else if dn {
+                        bs
+                    } else {
+                        b
+                    };
+                } else if (x > 0 && fig.px[i - 1] != 0)
+                    || (x + 1 < w && fig.px[i + 1] != 0)
+                    || (y > 0 && fig.px[i - w] != 0)
+                    || (y + 1 < h && fig.px[i + w] != 0)
+                {
+                    self.px[i] = ol;
+                }
+            }
+        }
     }
 }
