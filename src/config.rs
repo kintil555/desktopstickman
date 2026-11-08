@@ -127,7 +127,7 @@ impl Default for Config {
             shadow_opacity: 0.4,
             shadow_dx: 4,
             shadow_dy: 4,
-            shadow_blur: 1,
+            shadow_blur: 0,
             shadow_color: [0, 0, 0],
             autostart: false,
             startup_delay: 30,
