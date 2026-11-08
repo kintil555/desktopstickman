@@ -170,12 +170,16 @@ impl Stick {
 
     /// Mulai jatuh dari gantungan: tangan sudah terangkat, lalu perlahan turun ke pose jatuh.
     pub fn begin_fall(&mut self) {
+        // debu lari lama dibuang: posisinya relatif ke s.x lama, bukan ke stickman yang jatuh
+        self.fx.clear();
         self.fall_t = 0.0;
         self.arm0 = 1.0;
     }
 
     /// Satu frame jatuh bebas (posisi diatur `Hang`): pose udara.
     pub fn fall_tick(&mut self, vx: f32, dt: f32) {
+        // jendela mengikuti telapak kaki; debu hanya muncul saat mendarat (`land`)
+        self.fx.clear();
         self.oy = 1.0;
         self.vx = vx;
         self.t += dt;
@@ -332,6 +336,7 @@ impl Stick {
                     self.timer = 1.0;
                     self.mode = Mode::Idle;
                     if cfg.dust {
+                        fx::spawn_land(&mut self.fx, self.x, 0.7, rng);
                         fx::spawn_burst(&mut self.sparks, self.x, 30.0, rng);
                     }
                 }
