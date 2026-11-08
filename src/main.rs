@@ -225,6 +225,7 @@ fn overlay() {
                         } else if let Some(h) = hang.as_mut() {
                             if !h.falling() && h.age > 0.3 {
                                 h.release();
+                                s.begin_fall();
                             }
                         }
                     }
@@ -255,9 +256,7 @@ fn overlay() {
                     ),
                     Some(h) => {
                         // jatuh bebas: pose udara, jendela mengikuti telapak kaki
-                        s.oy = 1.0;
-                        s.vx = h.vel.x;
-                        s.t += dt;
+                        s.fall_tick(h.vel.x, dt);
                         (
                             PhysicalPosition::new(
                                 h.feet.x as i32 - WIN_W as i32 / 2,

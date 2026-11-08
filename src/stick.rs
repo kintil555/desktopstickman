@@ -18,6 +18,13 @@ pub const WALK: f32 = 350.0;
 const ACC: f32 = 2600.0 * WALK / 460.0;
 pub(crate) const GRAV: f32 = 2400.0;
 const JUMP_V: f32 = 760.0;
+/// Durasi animasi mendarat (jongkok lalu bangkit).
+const LAND_T: f32 = 0.4;
+
+fn ease(x: f32) -> f32 {
+    let x = x.clamp(0.0, 1.0);
+    x * x * (3.0 - 2.0 * x)
+}
 
 #[derive(Clone, Copy, Default)]
 pub struct V {
@@ -84,6 +91,12 @@ pub struct Stick {
     puff_t: f32,
     peak: f32,
     pub fx: Vec<fx::Dust>,
+    /// Lama jatuh (detik) dan seberapa terangkat tangan saat mulai jatuh (1 = dari gantungan).
+    fall_t: f32,
+    arm0: f32,
+    /// Sisa waktu animasi mendarat + kedalaman jongkok 0..1.
+    land_t: f32,
+    land_k: f32,
 }
 
 pub struct Pose {
@@ -125,6 +138,10 @@ impl Stick {
             puff_t: 0.0,
             peak: 0.0,
             fx: Vec::new(),
+            fall_t: 0.0,
+            arm0: 0.0,
+            land_t: 0.0,
+            land_k: 0.0,
         }
     }
 
@@ -136,7 +153,27 @@ impl Stick {
         self.vup = 0.0;
         self.mode = Mode::Idle;
         self.timer = 1.0;
+        self.land_t = LAND_T;
+        self.land_k = (h / 200.0).clamp(0.4, 1.0);
+        self.fall_t = 0.0;
         fx::spawn_land(&mut self.fx, x, fx::dust_k(h), rng);
+    }
+
+    /// Mulai jatuh dari gantungan: tangan sudah terangkat, lalu perlahan turun ke pose jatuh.
+    pub fn begin_fall(&mut self) {
+        self.fall_t = 0.0;
+        self.arm0 = 1.0;
+    }
+
+    /// Satu frame jatuh bebas (posisi diatur `Hang`): pose udara.
+    pub fn fall_tick(&mut self, vx: f32, dt: f32) {
+        self.oy = 1.0;
+        self.vx = vx;
+        self.t += dt;
+        self.fall_t += dt;
+        if vx.abs() > 5.0 {
+            self.face = vx.signum();
+        }
     }
 
     pub fn on(&self) -> bool {
@@ -147,6 +184,7 @@ impl Stick {
         let margin = 40.0;
         self.t += dt;
         fx::update(&mut self.fx, dt);
+        self.land_t = (self.land_t - dt).max(0.0);
         if self.x < margin {
             self.dir = 1.0;
         } else if self.x > max_x - margin {
@@ -175,6 +213,7 @@ impl Stick {
             Mode::Run => WALK,
         } * cfg.speed
             * self.dir;
+        let target = if self.land_t > 0.0 { 0.0 } else { target };
         let a = ACC * dt * if self.on() { 1.0 } else { 0.4 };
         self.vx += (target - self.vx).clamp(-a, a);
         if self.vx.abs() > 5.0 {
@@ -196,6 +235,8 @@ impl Stick {
                 self.vup = JUMP_V;
                 self.oy = 0.01;
                 self.peak = 0.0;
+                self.fall_t = 0.0;
+                self.arm0 = 0.0;
             }
             self.jump_t = 2.0 + rng.f() * 4.0;
         }
@@ -203,7 +244,15 @@ impl Stick {
             self.oy += self.vup * dt;
             self.vup -= GRAV * dt;
             self.peak = self.peak.max(self.oy);
+            if self.vup < 0.0 {
+                self.fall_t += dt;
+            }
             if self.oy <= 0.0 {
+                if self.peak >= 24.0 {
+                    self.land_t = LAND_T;
+                    self.land_k = (self.peak / 200.0).clamp(0.35, 1.0);
+                }
+                self.fall_t = 0.0;
                 if cfg.dust && -self.vup > 260.0 && self.peak >= 24.0 {
                     fx::spawn_land(&mut self.fx, self.x, fx::dust_k(self.peak), rng);
                 }
@@ -301,6 +350,18 @@ impl Stick {
                 - R * (m * 4.0 * (TAU * ph).cos().abs() + idle * (3.0 + 3.0 * br))),
         );
         let ae = A * if self.vx * f < 0.0 { 0.72 } else { 1.0 };
+        let u = 1.0 - self.land_t / LAND_T;
+        let landing = on && self.land_t > 0.0;
+        // jongkok saat mendarat: turun cepat, bangkit pelan
+        let crouch = if u < 0.25 {
+            ease(u / 0.25)
+        } else {
+            1.0 - ease((u - 0.25) / 0.75)
+        };
+        if landing {
+            hip.y += self.land_k * LEG * 0.3 * crouch;
+        }
+        let tuck = if on { 0.0 } else { ease(self.fall_t / 0.35) };
         let mut ft = [V::default(); 2];
         for (i, foot) in ft.iter_mut().enumerate() {
             *foot = if on {
@@ -317,9 +378,9 @@ impl Stick {
             } else {
                 let t = (self.vup / 900.0).clamp(0.0, 1.0);
                 if i == 1 {
-                    v(R * -f * 8.0, R * -(4.0 + 10.0 * t))
+                    v(R * -f * 8.0, R * -(4.0 + 10.0 * t) - tuck * LEG * 0.3)
                 } else {
-                    v(R * f * 12.0, R * -(10.0 + 18.0 * t))
+                    v(R * f * 12.0, R * -(10.0 + 18.0 * t) - tuck * LEG * 0.3)
                 }
             };
         }
@@ -346,6 +407,20 @@ impl Stick {
         let sw = R * dm * 20.0 * m * (TAU * ph).cos();
         let h1 = v(sh.x + sw - R * (1.0 - m) * f * 4.0, sh.y + ay);
         let h0 = v(sh.x - sw + R * (1.0 - m) * f * 4.0, sh.y + ay);
+        // tangan terangkat: perlahan saat jatuh (kecuali sudah naik dari gantungan), turun saat bangkit
+        let au = if !on {
+            self.arm0 + (0.85 - self.arm0) * ease(self.fall_t / 0.6)
+        } else if landing {
+            0.8 * (1.0 - ease(u))
+        } else {
+            0.0
+        };
+        let up = |side: f32, h: V| {
+            let l = (UA + FA) * 0.96;
+            let r = v(sh.x + side * 2.5f32.sin() * l, sh.y + 2.5f32.cos() * l);
+            v(h.x + (r.x - h.x) * au, h.y + (r.y - h.y) * au)
+        };
+        let (h0, h1) = (up(-1.0, h0), up(1.0, h1));
         let arms = [h0, h1].map(|h| (ik(sh, h, UA, FA, f), h));
         Pose {
             hip,
