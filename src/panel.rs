@@ -1,7 +1,7 @@
 //! Panel pengaturan (Slint, gaya pixel GUI). Overlay = proses terpisah (`--overlay`), tetap jalan
 //! saat panel ditutup; Start/Stop lewat pid file.
 use crate::{
-    config::{self, Anim, Body, Config, Inst},
+    config::{self, Anim, Body, Config, Inst, Item},
     shadow,
     stick::{Canvas, Stick, V},
     sys, tray,
@@ -103,6 +103,7 @@ fn live_cfg(ui: &Panel, base: &Config) -> Config {
     c.color = hsv2rgb(ui.get_hue(), ui.get_sat(), ui.get_val());
     c.speed = ui.get_speed();
     c.cell = ui.get_cell().round() as u32;
+    c.held = ui.get_held_id() as u32;
     c.shadow = ui.get_shadow();
     c.shadow_opacity = ui.get_shadow_opacity();
     c.shadow_dx = ui.get_shadow_dx().round() as i32;
@@ -115,9 +116,16 @@ fn live_cfg(ui: &Panel, base: &Config) -> Config {
 }
 
 /// Satu frame pratinjau: sosok berlari di tempat di atas garis lantai, lengkap dengan shadow.
-fn preview(ui: &Panel, base: &Config, st: &mut Stick, dt: f32) -> Image {
+fn preview(
+    ui: &Panel,
+    base: &Config,
+    st: &mut Stick,
+    arts: &mut crate::held::Arts,
+    dt: f32,
+) -> Image {
     let cfg = live_cfg(ui, base);
     st.demo(dt, &cfg);
+    crate::held::ensure(arts, &cfg.items);
     let mut cv = Canvas::new(PV, PV, cfg.cell);
     let o = V {
         x: PV as f32 / 2.0,
@@ -127,7 +135,11 @@ fn preview(ui: &Panel, base: &Config, st: &mut Stick, dt: f32) -> Image {
     if row < cv.h {
         cv.px[row * cv.w..(row + 1) * cv.w].fill(0xFF55_5555);
     }
-    cv.draw(&st.pose(), o, &cfg);
+    let pose = st.pose();
+    cv.draw(&pose, o, &cfg);
+    if let Some(d) = crate::held::pick(&cfg.items, cfg.held, arts) {
+        crate::held::draw(&mut cv, d, &pose, o, st.face);
+    }
     shadow::apply(&mut cv, &cfg);
     let mut buf = SharedPixelBuffer::<Rgba8Pixel>::new(cv.w as u32, cv.h as u32);
     for (d, &p) in buf.make_mut_slice().iter_mut().zip(&cv.px) {
@@ -198,7 +210,61 @@ fn load(ui: &Panel, c: &Config) {
     ui.set_b_back_k(b.back_k);
     set_keys(ui, c);
     update_grid(ui, &c.skin);
+    ui.set_held_id(c.held as i32);
     refresh_insts(ui, c);
+    refresh_items(ui, c);
+}
+
+/// Daftar item (tab Item) + editor untuk item terpilih.
+fn refresh_items(ui: &Panel, c: &Config) {
+    let (sel, worn) = (ui.get_sel_item(), ui.get_held_id());
+    let mut rows = Vec::new();
+    for it in &c.items {
+        rows.push(ui::ItemRow {
+            id: it.id as i32,
+            name: it.name.clone().into(),
+            sel: it.id as i32 == sel,
+            worn: it.id as i32 == worn,
+        });
+    }
+    ui.set_item_rows(slint::ModelRc::new(slint::VecModel::from(rows)));
+    if let Some(it) = c.items.iter().find(|i| i.id as i32 == sel) {
+        ui.set_item_back(it.hand == 1);
+        ui.set_item_off_x(it.off_x);
+        ui.set_item_off_y(it.off_y);
+        ui.set_item_scale(it.scale);
+        ui.set_item_angle(it.angle);
+        ui.set_item_pvx(it.pivot_x);
+        ui.set_item_pvy(it.pivot_y);
+        ui.set_item_follow(it.follow_arm);
+        ui.set_item_flip(it.flip);
+    } else {
+        ui.set_sel_item(0);
+    }
+}
+
+/// Tambah item dari file PNG ke pustaka dan langsung dipakai stickman yang sedang diatur.
+#[cfg_attr(not(windows), allow(dead_code))]
+fn add_item(ui: &Panel, path: &str) {
+    if crate::skin::load(path).is_none() {
+        return; // bukan PNG yang valid
+    }
+    let mut c = Config::load();
+    let id = c.next_item_id();
+    let name = std::path::Path::new(path)
+        .file_stem()
+        .map_or_else(|| format!("item {id}"), |s| s.to_string_lossy().into_owned());
+    c.items.push(Item {
+        id,
+        name,
+        path: path.to_string(),
+        ..Item::default()
+    });
+    c.save();
+    ui.set_sel_item(id as i32);
+    ui.set_held_id(id as i32);
+    let c = save_ui(ui);
+    refresh_items(ui, &c);
 }
 
 /// Daftar stickman (tab Daftar) + editor untuk yang terpilih.
@@ -227,6 +293,7 @@ fn set_keys(ui: &Panel, c: &Config) {
     ui.set_key_jump(c.keys.jump.clone().into());
     ui.set_key_fly(c.keys.fly.clone().into());
     ui.set_key_hide(c.keys.hide.clone().into());
+    ui.set_key_item(c.keys.item.clone().into());
 }
 
 /// Simpan isi panel: tab-tab mengatur stickman terpilih (atau Default bila tidak ada yang dipilih);
@@ -316,6 +383,7 @@ fn collect(ui: &Panel) -> Config {
     c.keys.jump = ui.get_key_jump().to_string();
     c.keys.fly = ui.get_key_fly().to_string();
     c.keys.hide = ui.get_key_hide().to_string();
+    c.keys.item = ui.get_key_item().to_string();
     c.sanitize();
     c
 }
@@ -472,6 +540,87 @@ pub fn run() {
             refresh_insts(&ui, &c);
         }
     });
+    ui.on_item_add({
+        let w = ui.as_weak();
+        move || {
+            #[cfg(windows)]
+            if let (Some(ui), Some(f)) = (
+                w.upgrade(),
+                rfd::FileDialog::new()
+                    .add_filter("PNG", &["png"])
+                    .pick_file(),
+            ) {
+                add_item(&ui, &f.to_string_lossy());
+            }
+            #[cfg(not(windows))]
+            let _ = &w;
+        }
+    });
+    ui.on_item_select({
+        let w = ui.as_weak();
+        move |id| {
+            let Some(ui) = w.upgrade() else { return };
+            ui.set_sel_item(id);
+            refresh_items(&ui, &Config::load());
+        }
+    });
+    // pakai / lepas item untuk stickman yang sedang diatur
+    ui.on_item_wear({
+        let w = ui.as_weak();
+        move |id| {
+            let Some(ui) = w.upgrade() else { return };
+            ui.set_held_id(if ui.get_held_id() == id { 0 } else { id });
+            let c = save_ui(&ui);
+            refresh_items(&ui, &c);
+        }
+    });
+    ui.on_item_delete({
+        let w = ui.as_weak();
+        move |id| {
+            let Some(ui) = w.upgrade() else { return };
+            let mut c = Config::load();
+            c.items.retain(|i| i.id as i32 != id);
+            // yang memakai item ini jadi tangan kosong
+            if c.held as i32 == id {
+                c.held = 0;
+            }
+            for i in &mut c.stickmen {
+                if i.cfg.held as i32 == id {
+                    i.cfg.held = 0;
+                }
+            }
+            c.save();
+            if ui.get_held_id() == id {
+                ui.set_held_id(0);
+            }
+            if ui.get_sel_item() == id {
+                ui.set_sel_item(0);
+            }
+            refresh_items(&ui, &c);
+        }
+    });
+    ui.on_item_changed({
+        let w = ui.as_weak();
+        move || {
+            let Some(ui) = w.upgrade() else { return };
+            let sel = ui.get_sel_item();
+            let mut c = Config::load();
+            if let Some(it) = c.items.iter_mut().find(|i| i.id as i32 == sel) {
+                it.hand = u32::from(ui.get_item_back());
+                it.off_x = ui.get_item_off_x();
+                it.off_y = ui.get_item_off_y();
+                it.scale = ui.get_item_scale();
+                it.angle = ui.get_item_angle();
+                it.pivot_x = ui.get_item_pvx();
+                it.pivot_y = ui.get_item_pvy();
+                it.follow_arm = ui.get_item_follow();
+                it.flip = ui.get_item_flip();
+            }
+            c.sanitize();
+            c.save();
+            refresh_items(&ui, &c);
+        }
+    });
     ui.on_inst_select({
         let w = ui.as_weak();
         move |id| {
@@ -530,7 +679,8 @@ pub fn run() {
                 1 => ui.set_key_hang(name.into()),
                 2 => ui.set_key_jump(name.into()),
                 3 => ui.set_key_fly(name.into()),
-                _ => ui.set_key_hide(name.into()),
+                4 => ui.set_key_hide(name.into()),
+                _ => ui.set_key_item(name.into()),
             }
             ui.set_recording(0);
             let c = save_ui(&ui);
@@ -580,7 +730,9 @@ pub fn run() {
     let pv_timer = slint::Timer::default();
     {
         let w = ui.as_weak();
-        let base = Config::load();
+        let mut base = Config::load();
+        let mut mt = Config::mtime();
+        let mut arts = crate::held::Arts::new();
         let mut st = Stick::new(0.0);
         let mut last = Instant::now();
         pv_timer.start(
@@ -594,7 +746,13 @@ pub fn run() {
                 if !ui.window().is_visible() || ui.window().is_minimized() {
                     return;
                 }
-                ui.set_preview_img(preview(&ui, &base, &mut st, dt));
+                // pustaka item bisa berubah (tab Item): muat ulang bila config berubah
+                let cur = Config::mtime();
+                if cur != mt {
+                    mt = cur;
+                    base = Config::load();
+                }
+                ui.set_preview_img(preview(&ui, &base, &mut st, &mut arts, dt));
             },
         );
     }

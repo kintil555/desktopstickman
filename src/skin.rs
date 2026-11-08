@@ -6,10 +6,10 @@ use crate::{
 use std::{fs::File, io::BufReader};
 
 pub struct Sheet {
-    w: usize,
-    h: usize,
+    pub w: usize,
+    pub h: usize,
     /// RGBA8
-    px: Vec<u8>,
+    pub px: Vec<u8>,
 }
 
 pub fn load(path: &str) -> Option<Sheet> {

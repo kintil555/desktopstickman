@@ -55,3 +55,8 @@ Sumber lengkap: `Stickman Pixel.html` (cari: pose1, drawFig, spawnRun, DSPR, dra
 ## Update (pengaturan per stickman)
 - `Inst { id, cfg: Config }`: tiap stickman menyimpan salinan pengaturan tampilan/perilaku (`Config::copy_look`: cell, speed, color, jump/run/fly/dust, shadow*, skin, body). Sisanya global (keys, floor_offset, hang, sound, autostart, ...). Overlay: `apply_inst` menimpa look dari Inst.
 - Panel: tab Daftar memilih target (Default = id 0, atau Stickman #N). SEMUA tab lain mengatur target terpilih (`save_ui` menulis ke Inst / global; `effective(id)` memuat ke UI). Header kanan: "Mengatur: <target>". Default = template stickman baru.
+
+## Update (item yang dipegang)
+- `Config.items: Vec<Item>` = pustaka item bersama (PNG, pivot/geser/skala/sudut/tangan/ikut lengan/balik); `Config.held` = item yang dipegang (per stickman, ikut `copy_look`), 0 = kosong. `keys.item` = tombol siklus ganti item (kosong -> item 1 -> ... -> kosong); tiap Agent punya `held` runtime.
+- `src/held.rs`: `draw` menggambar PNG ke Canvas per sel kanvas dgn nearest neighbor (tanpa antialias; alpha < 128 dilewati) di node tangan `Pose.arms[hand].1` (+geser, rotasi, mirror saat hadap kiri). Dipanggil di `render`/`render_hang` sebelum `shadow::apply`; tidak digambar saat terbang (kendaraan). `Arts` = cache gambar per path (Env di overlay, timer pratinjau di panel).
+- Panel tab Item: Tambah gambar (PNG, dialog rfd Windows), Pakai/Dipakai (untuk stickman yang sedang dipilih di tab Daftar), Hapus, editor posisi. Pratinjau kanan ikut menampilkan item.

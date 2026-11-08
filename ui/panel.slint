@@ -229,6 +229,13 @@ component KeyRow inherits Rectangle {
     }
 }
 
+export struct ItemRow {
+    id: int,
+    name: string,
+    sel: bool,
+    worn: bool,
+}
+
 export struct InstRow {
     id: int,
     name: string,
@@ -317,6 +324,20 @@ export component Panel inherits Window {
     in-out property <string> key-jump;
     in-out property <string> key-fly;
     in-out property <string> key-hide;
+    in-out property <string> key-item;
+    // Item yang dipegang
+    in-out property <[ItemRow]> item-rows;
+    in-out property <int> sel-item: 0;
+    in-out property <int> held-id: 0;
+    in-out property <bool> item-back: false;
+    in-out property <bool> item-follow: false;
+    in-out property <bool> item-flip: true;
+    in-out property <float> item-off-x: 0;
+    in-out property <float> item-off-y: 0;
+    in-out property <float> item-scale: 1;
+    in-out property <float> item-angle: 0;
+    in-out property <float> item-pvx: 0.15;
+    in-out property <float> item-pvy: 0.85;
     // 0 = tidak merekam; 1..4 = hang/jump/fly/hide sedang merekam
     in-out property <int> recording: 0;
     in-out property <int> count: 0;
@@ -338,6 +359,11 @@ export component Panel inherits Window {
     callback record(int);
     callback spawn-more();
     callback inst-select(int);
+    callback item-add();
+    callback item-select(int);
+    callback item-wear(int);
+    callback item-delete(int);
+    callback item-changed();
     callback inst-delete(int);
 
     Image {
@@ -388,6 +414,7 @@ export component Panel inherits Window {
             PxButton { text: "Skin"; size: 15px; active: root.tab == 3; clicked => { root.tab = 3; } }
             PxButton { text: "Anim"; size: 15px; active: root.tab == 4; clicked => { root.tab = 4; } }
             PxButton { text: "Tombol"; size: 15px; active: root.tab == 7; clicked => { root.tab = 7; } }
+            PxButton { text: "Item"; size: 15px; active: root.tab == 9; clicked => { root.tab = 9; } }
             PxButton { text: "Daftar"; size: 15px; active: root.tab == 8; clicked => { root.tab = 8; } }
             PxButton { text: "Sistem"; size: 15px; active: root.tab == 5; clicked => { root.tab = 5; } }
         }
@@ -638,6 +665,74 @@ export component Panel inherits Window {
                 KeyRow { value: root.key-fly; rec: root.recording == 3; pick => { root.record(root.recording == 3 ? 0 : 3); } clear => { root.recording = 0; root.key-fly = ""; root.keys-accepted(); } }
                 Label { text: "Sembunyikan / tampilkan stickman"; }
                 KeyRow { value: root.key-hide; rec: root.recording == 4; pick => { root.record(root.recording == 4 ? 0 : 4); } clear => { root.recording = 0; root.key-hide = ""; root.keys-accepted(); } }
+                Label { text: "Ganti item yang dipegang (siklus)"; }
+                KeyRow { value: root.key-item; rec: root.recording == 5; pick => { root.record(root.recording == 5 ? 0 : 5); } clear => { root.recording = 0; root.key-item = ""; root.keys-accepted(); } }
+            }
+
+            if root.tab == 9 : VerticalLayout {
+                spacing: 4px;
+                alignment: start;
+                HorizontalLayout {
+                    spacing: 6px;
+                    PxButton { text: "Tambah gambar (PNG)"; size: 16px; clicked => { root.item-add(); } }
+                    PxButton { text: "Tangan kosong"; size: 16px; clicked => { if (root.held-id != 0) { root.item-wear(root.held-id); } } }
+                }
+                Flickable {
+                    height: 110px;
+                    VerticalLayout {
+                        spacing: 4px;
+                        for r in root.item-rows : HorizontalLayout {
+                            height: 30px;
+                            spacing: 6px;
+                            PxButton { text: r.name; active: r.sel; clicked => { root.item-select(r.id); } }
+                            PxButton { text: r.worn ? "Dipakai" : "Pakai"; width: 90px; active: r.worn; clicked => { root.item-wear(r.id); } }
+                            PxButton { text: "Hapus"; width: 80px; clicked => { root.item-delete(r.id); } }
+                        }
+                    }
+                }
+                if root.sel-item == 0 : Label { text: "Pilih item di daftar untuk mengatur posisinya."; }
+                if root.sel-item != 0 : VerticalLayout {
+                    spacing: 2px;
+                    Label { text: "Titik genggam = bagian gambar yang menempel di tangan."; }
+                    HorizontalLayout {
+                        spacing: 10px;
+                        VerticalLayout {
+                            Label { text: "Geser X: " + Math.round(root.item-off-x); }
+                            PxSlider { minimum: -60; maximum: 60; value <=> root.item-off-x; released => { root.item-changed(); } }
+                        }
+                        VerticalLayout {
+                            Label { text: "Geser Y: " + Math.round(root.item-off-y); }
+                            PxSlider { minimum: -60; maximum: 60; value <=> root.item-off-y; released => { root.item-changed(); } }
+                        }
+                    }
+                    HorizontalLayout {
+                        spacing: 10px;
+                        VerticalLayout {
+                            Label { text: "Skala: " + Math.round(root.item-scale * 100) / 100; }
+                            PxSlider { minimum: 0.25; maximum: 8; value <=> root.item-scale; released => { root.item-changed(); } }
+                        }
+                        VerticalLayout {
+                            Label { text: "Sudut: " + Math.round(root.item-angle); }
+                            PxSlider { minimum: -180; maximum: 180; value <=> root.item-angle; released => { root.item-changed(); } }
+                        }
+                    }
+                    HorizontalLayout {
+                        spacing: 10px;
+                        VerticalLayout {
+                            Label { text: "Genggam X: " + Math.round(root.item-pvx * 100) / 100; }
+                            PxSlider { minimum: 0; maximum: 1; value <=> root.item-pvx; released => { root.item-changed(); } }
+                        }
+                        VerticalLayout {
+                            Label { text: "Genggam Y: " + Math.round(root.item-pvy * 100) / 100; }
+                            PxSlider { minimum: 0; maximum: 1; value <=> root.item-pvy; released => { root.item-changed(); } }
+                        }
+                    }
+                    HorizontalLayout {
+                        PxCheck { text: "Tangan belakang"; checked <=> root.item-back; toggled => { root.item-changed(); } }
+                        PxCheck { text: "Ikut lengan"; checked <=> root.item-follow; toggled => { root.item-changed(); } }
+                        PxCheck { text: "Balik"; checked <=> root.item-flip; toggled => { root.item-changed(); } }
+                    }
+                }
             }
 
             if root.tab == 8 : VerticalLayout {

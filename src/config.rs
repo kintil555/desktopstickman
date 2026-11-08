@@ -117,6 +117,8 @@ pub struct Keys {
     pub jump: String,
     pub fly: String,
     pub hide: String,
+    /// Ganti item yang dipegang (siklus).
+    pub item: String,
 }
 
 impl Default for Keys {
@@ -126,7 +128,64 @@ impl Default for Keys {
             jump: String::new(),
             fly: String::new(),
             hide: String::new(),
+            item: String::new(),
         }
+    }
+}
+
+/// Item yang dipegang stickman: gambar PNG (pixel art, tanpa antialias) di node tangan.
+#[derive(Serialize, Deserialize, Clone, Debug)]
+#[serde(default)]
+pub struct Item {
+    pub id: u32,
+    pub name: String,
+    pub path: String,
+    /// 0 = tangan depan, 1 = tangan belakang.
+    pub hand: u32,
+    /// Titik genggam di gambar (0..1 dari lebar/tinggi); titik ini menempel di tangan.
+    pub pivot_x: f32,
+    pub pivot_y: f32,
+    /// Geser dari node tangan (px layar); x ikut arah hadap.
+    pub off_x: f32,
+    pub off_y: f32,
+    /// Piksel kanvas per piksel gambar.
+    pub scale: f32,
+    /// Putar (derajat, searah jarum jam).
+    pub angle: f32,
+    /// Ikut arah lengan bawah (siku -> tangan).
+    pub follow_arm: bool,
+    /// Gambar dibalik saat stickman menghadap kiri.
+    pub flip: bool,
+}
+
+impl Default for Item {
+    fn default() -> Self {
+        Self {
+            id: 0,
+            name: String::new(),
+            path: String::new(),
+            hand: 0,
+            pivot_x: 0.15,
+            pivot_y: 0.85,
+            off_x: 0.0,
+            off_y: 0.0,
+            scale: 1.0,
+            angle: 0.0,
+            follow_arm: false,
+            flip: true,
+        }
+    }
+}
+
+impl Item {
+    fn sanitize(&mut self) {
+        self.hand = self.hand.min(1);
+        self.pivot_x = self.pivot_x.clamp(0.0, 1.0);
+        self.pivot_y = self.pivot_y.clamp(0.0, 1.0);
+        self.off_x = self.off_x.clamp(-100.0, 100.0);
+        self.off_y = self.off_y.clamp(-100.0, 100.0);
+        self.scale = self.scale.clamp(0.25, 8.0);
+        self.angle = self.angle.clamp(-360.0, 360.0);
     }
 }
 
@@ -153,6 +212,7 @@ impl Inst {
     pub fn from_cfg(id: u32, c: &Config) -> Self {
         let mut cfg = c.clone();
         cfg.stickmen.clear();
+        cfg.items.clear();
         Self { id, cfg }
     }
 }
@@ -196,6 +256,9 @@ pub struct Config {
     pub keys: Keys,
     /// Daftar stickman; kosong = satu stickman memakai pengaturan global.
     pub stickmen: Vec<Inst>,
+    /// Pustaka item (dipakai bersama); `held` = item yang dipegang (0 = tangan kosong).
+    pub items: Vec<Item>,
+    pub held: u32,
 }
 
 impl Default for Config {
@@ -225,6 +288,8 @@ impl Default for Config {
             body: Body::default(),
             keys: Keys::default(),
             stickmen: Vec::new(),
+            items: Vec::new(),
+            held: 0,
         }
     }
 }
@@ -237,6 +302,10 @@ impl Config {
             .unwrap_or_default();
         c.sanitize();
         c
+    }
+
+    pub fn next_item_id(&self) -> u32 {
+        self.items.iter().map(|i| i.id).max().unwrap_or(0) + 1
     }
 
     pub fn next_id(&self) -> u32 {
@@ -273,11 +342,15 @@ impl Config {
         self.shadow_color = o.shadow_color;
         self.skin = o.skin.clone();
         self.body = o.body.clone();
+        self.held = o.held;
     }
 
     pub fn sanitize(&mut self) {
         for i in &mut self.stickmen {
             i.cfg.sanitize();
+        }
+        for it in &mut self.items {
+            it.sanitize();
         }
         self.cell = self.cell.clamp(1, 8);
         self.speed = self.speed.clamp(0.1, 3.0);
@@ -299,6 +372,7 @@ impl Config {
             &mut self.keys.jump,
             &mut self.keys.fly,
             &mut self.keys.hide,
+            &mut self.keys.item,
         ] {
             *k = k.trim().to_string();
             if crate::sys::parse(k).is_none() {

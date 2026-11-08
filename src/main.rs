@@ -3,6 +3,7 @@
 mod config;
 mod fx;
 mod hang;
+mod held;
 mod panel;
 mod present;
 mod shadow;
@@ -39,7 +40,7 @@ fn seed() -> u32 {
         .map_or(1, |d| d.subsec_nanos())
 }
 
-fn render(s: &Stick, cfg: &Config, sheet: Option<&skin::Sheet>) -> Canvas {
+fn render(s: &Stick, cfg: &Config, sheet: Option<&skin::Sheet>, hi: Option<held::Draw>) -> Canvas {
     let mut c = Canvas::new(WIN_W, WIN_H, cfg.cell);
     let floor_y = FEET_Y + s.alt;
     let ox = WIN_W as f32 / 2.0;
@@ -52,9 +53,13 @@ fn render(s: &Stick, cfg: &Config, sheet: Option<&skin::Sheet>) -> Canvas {
             x: ox,
             y: FEET_Y - s.oy,
         };
+        let pose = s.pose();
         match sheet {
             Some(sh) => skin::draw_player(&mut c, sh, cfg, s, o, false, None),
-            None => c.draw(&s.pose(), o, cfg),
+            None => c.draw(&pose, o, cfg),
+        }
+        if let Some(d) = hi {
+            held::draw(&mut c, d, &pose, o, s.face);
         }
     } else {
         let o = V {
@@ -68,7 +73,13 @@ fn render(s: &Stick, cfg: &Config, sheet: Option<&skin::Sheet>) -> Canvas {
 }
 
 /// Stickman bergantung di kursor: tangan di (WIN_W/2, HAND_Y) pada kanvas.
-fn render_hang(h: &Hang, s: &Stick, cfg: &Config, sheet: Option<&skin::Sheet>) -> Canvas {
+fn render_hang(
+    h: &Hang,
+    s: &Stick,
+    cfg: &Config,
+    sheet: Option<&skin::Sheet>,
+    hi: Option<held::Draw>,
+) -> Canvas {
     let mut c = Canvas::new(WIN_W, WIN_H, cfg.cell);
     let o = V {
         x: WIN_W as f32 / 2.0,
@@ -82,6 +93,9 @@ fn render_hang(h: &Hang, s: &Stick, cfg: &Config, sheet: Option<&skin::Sheet>) -
             skin::draw_player(&mut c, sh, cfg, &st, o, false, Some((h.angle(), o)));
         }
         None => c.draw(&h.pose(), o, cfg),
+    }
+    if let Some(d) = hi {
+        held::draw(&mut c, d, &h.pose(), o, h.face);
     }
     shadow::apply(&mut c, cfg);
     c
@@ -122,7 +136,7 @@ fn dump(path: &str, fly: bool) {
         for _ in 0..2 {
             s.update(step, &cfg, &mut rng, 1200.0, 300.0);
         }
-        let c = render(&s, &cfg, None);
+        let c = render(&s, &cfg, None, None);
         for y in 0..h {
             for x in 0..w {
                 let p = c.px[(y / cfg.cell as usize) * c.w + x / cfg.cell as usize];
@@ -145,8 +159,10 @@ struct Env {
     mon_pos: PhysicalPosition<i32>,
     mon_size: PhysicalSize<u32>,
     sheet: Option<skin::Sheet>,
-    /// Tepi tombol pintas pada tick ini: [ikut, lompat, kendaraan, sembunyikan].
-    edge: [bool; 4],
+    /// Gambar item (PNG) per path.
+    arts: held::Arts,
+    /// Tepi tombol pintas pada tick ini: [ikut, lompat, kendaraan, sembunyikan, ganti item].
+    edge: [bool; 5],
     shown: bool,
     /// Sudah ada stickman yang dibawa kursor (hanya satu boleh sekaligus).
     taken: bool,
@@ -164,7 +180,8 @@ impl Env {
             mon_pos,
             mon_size,
             sheet,
-            edge: [false; 4],
+            arts: held::Arts::new(),
+            edge: [false; 5],
             shown: true,
             taken: false,
             busy: true,
@@ -179,6 +196,8 @@ struct Agent {
     out: present::Presenter,
     /// Config global yang sudah ditimpa pengaturan stickman ini.
     cfg: Config,
+    /// Item yang sedang dipegang (id; 0 = kosong); bisa diganti dengan tombol pintas.
+    held: u32,
     s: Stick,
     rng: Rng,
     last: Instant,
@@ -206,6 +225,7 @@ impl Agent {
         let _ = win.set_cursor_hittest(false);
         win.set_visible(env.shown);
         let out = present::Presenter::new(&win, WIN_W, WIN_H);
+        let held = cfg.held;
         let mut rng = Rng::new(seed() ^ id.wrapping_mul(0x9E37_79B1));
         // posisi awal acak supaya stickman tidak bertumpuk
         let s = Stick::new(env.mon_size.width as f32 * (0.1 + 0.8 * rng.f()));
@@ -214,6 +234,7 @@ impl Agent {
             win,
             out,
             cfg,
+            held,
             s,
             rng,
             last: Instant::now(),
@@ -282,13 +303,14 @@ impl Agent {
             self.s.land(x, vel.x * 0.5, drop_h, &mut self.rng);
         }
         let sheet = env.sheet.as_ref();
+        let hi = held::pick(&self.cfg.items, self.held, &env.arts);
         let (pos, img) = match self.hang.as_ref() {
             Some(h) if h.phase != Phase::Fall => (
                 PhysicalPosition::new(
                     h.hand.x as i32 - WIN_W as i32 / 2,
                     h.hand.y as i32 - HAND_Y as i32,
                 ),
-                render_hang(h, &self.s, &self.cfg, sheet),
+                render_hang(h, &self.s, &self.cfg, sheet, hi),
             ),
             Some(h) => {
                 // jatuh bebas: pose udara, jendela mengikuti telapak kaki
@@ -298,7 +320,7 @@ impl Agent {
                         h.feet.x as i32 - WIN_W as i32 / 2,
                         h.feet.y as i32 - FEET_Y as i32,
                     ),
-                    render(&self.s, &self.cfg, sheet),
+                    render(&self.s, &self.cfg, sheet, hi),
                 )
             }
             None => {
@@ -307,7 +329,7 @@ impl Agent {
                     mon_pos.x + self.s.x as i32 - WIN_W as i32 / 2,
                     floor_y - FEET_Y as i32 - self.s.alt as i32,
                 );
-                (pos, render(&self.s, &self.cfg, sheet))
+                (pos, render(&self.s, &self.cfg, sheet, hi))
             }
         };
         let idle = self.hang.is_none()
@@ -329,6 +351,9 @@ fn sync_agents(agents: &mut Vec<Agent>, t: &EventLoopWindowTarget<()>, cfg: &Con
         let mut c = cfg.clone();
         let keep = c.apply_inst(a.id);
         if keep {
+            if c.held != a.cfg.held {
+                a.held = c.held;
+            }
             a.cfg = c;
             a.prev.0.clear();
         }
@@ -357,10 +382,11 @@ fn overlay() {
     let mut cfg_mtime = Config::mtime();
     let el = EventLoop::new().expect("event loop");
     let mut env = Env::new(&el, load_sheet(&cfg));
+    held::sync(&mut env.arts, &cfg.items);
     let mut agents: Vec<Agent> = Vec::new();
     sync_agents(&mut agents, &el, &cfg, &env);
     let (mut next, mut chk) = (Instant::now(), Instant::now());
-    let mut key_prev = [false; 4];
+    let mut key_prev = [false; 5];
 
     let _ = el.run(move |event, elwt| match event {
         Event::AboutToWait => {
@@ -376,6 +402,7 @@ fn overlay() {
                         cfg_mtime = mt;
                         cfg = Config::load();
                         env.sheet = load_sheet(&cfg);
+                        held::sync(&mut env.arts, &cfg.items);
                         sync_agents(&mut agents, elwt, &cfg, &env);
                         // semua dihapus dari daftar (di panel) = overlay berhenti
                         if agents.is_empty() {
@@ -389,6 +416,7 @@ fn overlay() {
                     &cfg.keys.jump,
                     &cfg.keys.fly,
                     &cfg.keys.hide,
+                    &cfg.keys.item,
                 ]
                 .map(|k| sys::combo_down(k.as_str()));
                 env.edge = std::array::from_fn(|i| kd[i] && !key_prev[i]);
@@ -408,6 +436,9 @@ fn overlay() {
                     }
                     if env.edge[2] {
                         a.s.force_fly();
+                    }
+                    if env.edge[4] {
+                        a.held = held::next(&a.cfg.items, a.held);
                     }
                     a.win.request_redraw();
                 }
