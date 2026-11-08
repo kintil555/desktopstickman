@@ -207,8 +207,13 @@ fn overlay() {
                     }
                 }
                 // tombol pintas global: [gantung, lompat, kendaraan, sembunyikan]
-                let kd = [&cfg.keys.hang, &cfg.keys.jump, &cfg.keys.fly, &cfg.keys.hide]
-                    .map(|k| sys::vk(k).is_some_and(sys::key_down));
+                let kd = [
+                    &cfg.keys.hang,
+                    &cfg.keys.jump,
+                    &cfg.keys.fly,
+                    &cfg.keys.hide,
+                ]
+                .map(|k| sys::vk(k).is_some_and(sys::key_down));
                 let edge: [bool; 4] = std::array::from_fn(|i| kd[i] && !key_prev[i]);
                 key_prev = kd;
                 if edge[1] {
