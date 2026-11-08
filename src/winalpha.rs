@@ -25,11 +25,10 @@ pub struct Layered {
 impl Layered {
     pub fn new(hwnd: isize, w: i32, h: i32) -> Option<Self> {
         unsafe {
-            let hwnd = hwnd as HWND;
             let ex = GetWindowLongPtrW(hwnd, GWL_EXSTYLE);
             let add = WS_EX_LAYERED | WS_EX_TRANSPARENT | WS_EX_TOOLWINDOW | WS_EX_NOACTIVATE;
             SetWindowLongPtrW(hwnd, GWL_EXSTYLE, ex | add as isize);
-            let dc = CreateCompatibleDC(null_mut());
+            let dc = CreateCompatibleDC(0);
             let mut bi: BITMAPINFO = mem::zeroed();
             bi.bmiHeader.biSize = mem::size_of::<BITMAPINFOHEADER>() as u32;
             bi.bmiHeader.biWidth = w;
@@ -38,8 +37,8 @@ impl Layered {
             bi.bmiHeader.biBitCount = 32;
             bi.bmiHeader.biCompression = BI_RGB;
             let mut bits: *mut c_void = null_mut();
-            let bmp = CreateDIBSection(dc, &bi, DIB_RGB_COLORS, &mut bits, null_mut(), 0);
-            if bmp.is_null() || bits.is_null() {
+            let bmp = CreateDIBSection(dc, &bi, DIB_RGB_COLORS, &mut bits, 0, 0);
+            if bmp == 0 || bits.is_null() {
                 DeleteDC(dc);
                 return None;
             }
@@ -75,15 +74,7 @@ impl Layered {
             };
             let src = POINT { x: 0, y: 0 };
             UpdateLayeredWindow(
-                self.hwnd,
-                null_mut(),
-                &pos,
-                &size,
-                self.dc,
-                &src,
-                0,
-                &blend,
-                ULW_ALPHA,
+                self.hwnd, 0, &pos, &size, self.dc, &src, 0, &blend, ULW_ALPHA,
             );
         }
     }

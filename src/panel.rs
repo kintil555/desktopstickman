@@ -8,7 +8,11 @@ use std::{
     time::Duration,
 };
 
-slint::include_modules!();
+mod ui {
+    #![allow(deprecated, clippy::all, unused)]
+    slint::include_modules!();
+}
+use ui::Panel;
 
 fn load(ui: &Panel, c: &Config) {
     ui.set_speed(c.speed);
