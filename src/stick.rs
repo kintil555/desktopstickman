@@ -17,7 +17,7 @@ const LIFT: f32 = LEG * 0.26;
 const WALK: f32 = 350.0;
 const ACC: f32 = 2600.0 * WALK / 460.0;
 const GRAV: f32 = 2400.0;
-const JUMP_V: f32 = 520.0;
+const JUMP_V: f32 = 760.0;
 
 #[derive(Clone, Copy, Default)]
 pub struct V {
@@ -82,6 +82,7 @@ pub struct Stick {
     fly_t: f32,
     fly_cd: f32,
     puff_t: f32,
+    peak: f32,
     pub fx: Vec<fx::Dust>,
 }
 
@@ -122,6 +123,7 @@ impl Stick {
             fly_t: 0.0,
             fly_cd: 8.0,
             puff_t: 0.0,
+            peak: 0.0,
             fx: Vec::new(),
         }
     }
@@ -174,7 +176,7 @@ impl Stick {
             self.fly = Fly::Up;
             self.alt_to = 100.0 + rng.f() * (max_alt - 100.0).max(0.0);
             self.thr = 1.0;
-            fx::burst(&mut self.fx, self.x, 0.6, rng);
+            fx::spawn_land(&mut self.fx, self.x, 0.6, rng);
             return;
         }
         self.jump_t -= dt;
@@ -182,20 +184,17 @@ impl Stick {
             if cfg.jump && self.on() && rng.f() < 0.6 {
                 self.vup = JUMP_V;
                 self.oy = 0.01;
+                self.peak = 0.0;
             }
             self.jump_t = 2.0 + rng.f() * 4.0;
         }
         if !self.on() {
             self.oy += self.vup * dt;
             self.vup -= GRAV * dt;
+            self.peak = self.peak.max(self.oy);
             if self.oy <= 0.0 {
-                if cfg.dust {
-                    fx::burst(
-                        &mut self.fx,
-                        self.x,
-                        (-self.vup / 900.0).clamp(0.1, 1.0),
-                        rng,
-                    );
+                if cfg.dust && -self.vup > 260.0 && self.peak >= 24.0 {
+                    fx::spawn_land(&mut self.fx, self.x, fx::dust_k(self.peak), rng);
                 }
                 self.oy = 0.0;
                 self.vup = 0.0;
@@ -207,8 +206,7 @@ impl Stick {
             self.puff_t -= dt;
             if cfg.dust && self.vx.abs() > 180.0 && self.puff_t <= 0.0 {
                 self.puff_t = 0.05;
-                let k = ((self.vx.abs() / WALK - 0.5) * 2.0).clamp(0.0, 1.0);
-                fx::run_puff(&mut self.fx, self.x, -self.vx.signum(), k, rng);
+                fx::spawn_run(&mut self.fx, self.x, self.vx.signum(), self.vx.abs(), rng);
             }
         }
     }
@@ -229,7 +227,7 @@ impl Stick {
                     self.puff_t -= dt;
                     if self.puff_t <= 0.0 {
                         self.puff_t = 0.08;
-                        fx::burst(&mut self.fx, self.x, 0.3, rng);
+                        fx::spawn_land(&mut self.fx, self.x, 0.25, rng);
                     }
                 }
                 if self.alt >= self.alt_to {
@@ -257,7 +255,7 @@ impl Stick {
                     self.timer = 1.0;
                     self.mode = Mode::Idle;
                     if cfg.dust {
-                        fx::burst(&mut self.fx, self.x, 0.7, rng);
+                        fx::spawn_land(&mut self.fx, self.x, 0.7, rng);
                     }
                 }
             }

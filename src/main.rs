@@ -21,9 +21,9 @@ use winit::{
 };
 
 const WIN_W: u32 = 320;
-const WIN_H: u32 = 200;
+const WIN_H: u32 = 260;
 /// Posisi telapak kaki di dalam jendela (px dari atas).
-const FEET_Y: f32 = 165.0;
+const FEET_Y: f32 = 225.0;
 
 fn seed() -> u32 {
     std::time::SystemTime::now()
@@ -36,9 +36,7 @@ fn render(s: &Stick, cfg: &Config) -> Canvas {
     let floor_y = FEET_Y + s.alt;
     let ox = WIN_W as f32 / 2.0;
     if cfg.dust {
-        for d in &s.fx {
-            fx::draw(&mut c, d, s.x, ox, floor_y);
-        }
+        fx::draw_all(&mut c, &s.fx, s.x, ox, floor_y);
     }
     if s.fly == Fly::No {
         let o = V {
