@@ -204,7 +204,7 @@ fn load(ui: &Panel, c: &Config) {
 fn update_grid(ui: &Panel, k: &config::Skin) {
     let img = crate::skin::grid_preview(k, 300, 190).map(|(w, h, px)| {
         let mut buf = SharedPixelBuffer::<Rgba8Pixel>::new(w as u32, h as u32);
-        for (d, p) in buf.make_mut_slice().iter_mut().zip(px.chunks_exact(4)) {
+        for (d, p) in buf.make_mut_slice().iter_mut().zip(px.chunks(4)) {
             *d = Rgba8Pixel::new(p[0], p[1], p[2], p[3]);
         }
         Image::from_rgba8(buf)

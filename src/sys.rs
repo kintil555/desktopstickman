@@ -296,9 +296,13 @@ pub fn parse(s: &str) -> Option<(u8, u32)> {
 }
 
 fn mods_now() -> u8 {
-    u8::from(key_down(0x11)) * MOD_CTRL
-        | u8::from(key_down(0x12)) * MOD_ALT
-        | u8::from(key_down(0x10)) * MOD_SHIFT
+    let mut m = 0;
+    for (vk, bit) in [(0x11, MOD_CTRL), (0x12, MOD_ALT), (0x10, MOD_SHIFT)] {
+        if key_down(vk) {
+            m |= bit;
+        }
+    }
+    m
 }
 
 /// Kombinasi sedang ditekan (modifier harus persis sama, jadi "C" tidak aktif saat Ctrl+C).
