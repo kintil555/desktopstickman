@@ -29,3 +29,4 @@ Sumber lengkap: `Stickman Pixel.html` (cari: pose1, drawFig, spawnRun, DSPR, dra
 - src/shadow.rs (drop shadow geser+blur), src/skin.rs (PNG via crate `png`), src/sys.rs (pid, spawn terlepas, autostart: reg Run / .desktop, prioritas rendah).
 - `--startup` = tidur `startup_delay` detik lalu overlay. Overlay: proses terpisah, ~30fps saat idle, skip present bila frame sama.
 - Credit font: Pixel Font - Groundhog © 2022 Chevy Ray Johnston.
+- Gantung di mouse (BELUM di-build): src/hang.rs (panjat hand-over-hand -> pendulum; kursor ke kanan = badan ke kiri, miring & ayun ikut kecepatan kursor), kursor/klik kanan dibaca via sys::cursor (GetCursorPos/GetAsyncKeyState, Windows saja). Klik kanan stickman = gantung, klik kanan lagi = lepas & jatuh. Skin kustom diputar di sekitar tangan (skin::draw_player param `hang`).

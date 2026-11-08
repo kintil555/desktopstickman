@@ -2,6 +2,7 @@
 
 mod config;
 mod fx;
+mod hang;
 mod panel;
 mod present;
 mod shadow;
@@ -13,11 +14,12 @@ mod veh;
 mod winalpha;
 
 use config::Config;
+use hang::{Hang, Phase, HAND_Y};
 use std::{
     sync::Arc,
     time::{Duration, Instant},
 };
-use stick::{Canvas, Fly, Rng, Stick, V};
+use stick::{Canvas, Fly, Rng, Stick, GRAV, V};
 use winit::{
     dpi::{PhysicalPosition, PhysicalSize},
     event::{Event, WindowEvent},
@@ -49,7 +51,7 @@ fn render(s: &Stick, cfg: &Config, sheet: Option<&skin::Sheet>) -> Canvas {
             y: FEET_Y - s.oy,
         };
         match sheet {
-            Some(sh) => skin::draw_player(&mut c, sh, cfg, s, o, false),
+            Some(sh) => skin::draw_player(&mut c, sh, cfg, s, o, false, None),
             None => c.draw(&s.pose(), o, cfg),
         }
     } else {
@@ -58,6 +60,26 @@ fn render(s: &Stick, cfg: &Config, sheet: Option<&skin::Sheet>) -> Canvas {
             y: FEET_Y + s.bob(),
         };
         veh::draw(&mut c, s, o, cfg, floor_y, sheet);
+    }
+    shadow::apply(&mut c, cfg);
+    c
+}
+
+/// Stickman bergantung di kursor: tangan di (WIN_W/2, HAND_Y) pada kanvas.
+fn render_hang(h: &Hang, s: &Stick, cfg: &Config, sheet: Option<&skin::Sheet>) -> Canvas {
+    let mut c = Canvas::new(WIN_W, WIN_H, cfg.cell);
+    let o = V {
+        x: WIN_W as f32 / 2.0,
+        y: HAND_Y,
+    };
+    match sheet {
+        Some(sh) => {
+            let mut st = Stick::new(0.0);
+            st.face = h.face;
+            st.t = s.t;
+            skin::draw_player(&mut c, sh, cfg, &st, o, false, Some((h.angle(), o)));
+        }
+        None => c.draw(&h.pose(), o, cfg),
     }
     shadow::apply(&mut c, cfg);
     c
@@ -152,6 +174,8 @@ fn overlay() {
     // hemat: lewati present bila gambar & posisi sama; idle di lantai cukup ~30 fps
     let mut prev: (Vec<u32>, PhysicalPosition<i32>) = (Vec::new(), PhysicalPosition::new(0, 0));
     let mut frame = Duration::from_millis(16);
+    let mut hang: Option<Hang> = None;
+    let mut rb_prev = false;
 
     let _ = el.run(move |event, elwt| match event {
         Event::AboutToWait => {
@@ -178,15 +202,85 @@ fn overlay() {
                         prev.0.clear();
                     }
                 }
-                s.update(dt, &cfg, &mut rng, max_x, max_alt);
+                // klik kanan pada stickman = gantung di kursor; klik kanan lagi = lepas
+                if let Some((cx, cy, down, clicked)) = cfg.hang.then(sys::cursor).flatten() {
+                    let press = clicked || (down && !rb_prev);
+                    rb_prev = down;
+                    let cur = V {
+                        x: cx as f32,
+                        y: cy as f32,
+                    };
+                    if press {
+                        if hang.is_none() {
+                            let feet = V {
+                                x: (prev.1.x + WIN_W as i32 / 2) as f32,
+                                y: (prev.1.y + FEET_Y as i32) as f32,
+                            };
+                            let hit = (cur.x - feet.x).abs() <= 30.0
+                                && cur.y >= feet.y - 100.0
+                                && cur.y <= feet.y + 8.0;
+                            if hit && s.fly == Fly::No {
+                                hang = Some(Hang::grab(cur, feet, s.face));
+                            }
+                        } else if let Some(h) = hang.as_mut() {
+                            if !h.falling() && h.age > 0.3 {
+                                h.release();
+                            }
+                        }
+                    }
+                    if let Some(h) = hang.as_mut().filter(|h| !h.falling()) {
+                        h.update(dt, cur);
+                    }
+                }
                 let floor_y = mon_pos.y + mon_size.height as i32 - cfg.floor_offset;
-                let pos = PhysicalPosition::new(
-                    mon_pos.x + s.x as i32 - WIN_W as i32 / 2,
-                    floor_y - FEET_Y as i32 - s.alt as i32,
-                );
-                let idle = s.fly == Fly::No && s.on() && s.vx.abs() < 1.0 && s.fx.is_empty();
+                let mut landed = None;
+                if let Some(h) = hang.as_mut().filter(|h| h.falling()) {
+                    if h.fall(dt, floor_y as f32) {
+                        landed = Some((h.feet.x, h.vel));
+                    }
+                }
+                if let Some((x, vel)) = landed {
+                    hang = None;
+                    let drop_h = vel.y * vel.y / (2.0 * GRAV);
+                    let x = (x - mon_pos.x as f32).clamp(0.0, max_x);
+                    s.land(x, vel.x * 0.5, drop_h, &mut rng);
+                }
+                let (pos, img) = match hang.as_ref() {
+                    Some(h) if h.phase != Phase::Fall => (
+                        PhysicalPosition::new(
+                            h.hand.x as i32 - WIN_W as i32 / 2,
+                            h.hand.y as i32 - HAND_Y as i32,
+                        ),
+                        render_hang(h, &s, &cfg, sheet.as_ref()),
+                    ),
+                    Some(h) => {
+                        // jatuh bebas: pose udara, jendela mengikuti telapak kaki
+                        s.oy = 1.0;
+                        s.vx = h.vel.x;
+                        s.t += dt;
+                        (
+                            PhysicalPosition::new(
+                                h.feet.x as i32 - WIN_W as i32 / 2,
+                                h.feet.y as i32 - FEET_Y as i32,
+                            ),
+                            render(&s, &cfg, sheet.as_ref()),
+                        )
+                    }
+                    None => {
+                        s.update(dt, &cfg, &mut rng, max_x, max_alt);
+                        let pos = PhysicalPosition::new(
+                            mon_pos.x + s.x as i32 - WIN_W as i32 / 2,
+                            floor_y - FEET_Y as i32 - s.alt as i32,
+                        );
+                        (pos, render(&s, &cfg, sheet.as_ref()))
+                    }
+                };
+                let idle = hang.is_none()
+                    && s.fly == Fly::No
+                    && s.on()
+                    && s.vx.abs() < 1.0
+                    && s.fx.is_empty();
                 frame = Duration::from_millis(if idle { 33 } else { 16 });
-                let img = render(&s, &cfg, sheet.as_ref());
                 if prev.1 != pos || prev.0 != img.px {
                     out.present(&img, cfg.cell as usize, pos);
                     prev = (img.px, pos);

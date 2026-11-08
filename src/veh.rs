@@ -146,7 +146,7 @@ pub fn draw(c: &mut Canvas, s: &Stick, o: V, cfg: &Config, floor_y: f32, sheet: 
             x: o.x + q.x,
             y: o.y + q.y,
         };
-        skin::draw_player(c, sh, cfg, s, seat, true);
+        skin::draw_player(c, sh, cfg, s, seat, true, None);
     } else {
         let mut tmp = Canvas::new(c.w as u32 * cfg.cell, c.h as u32 * cfg.cell, cfg.cell);
         tmp.draw(&seated(s.face), o, cfg);

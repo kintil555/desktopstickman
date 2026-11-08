@@ -88,6 +88,8 @@ pub struct Config {
     pub run: bool,
     pub fly: bool,
     pub dust: bool,
+    /// Klik kanan pada stickman = bergantung di kursor mouse (Windows).
+    pub hang: bool,
     pub sound: bool,
     pub volume: f32,
     pub shadow: bool,
@@ -118,6 +120,7 @@ impl Default for Config {
             run: true,
             fly: true,
             dust: true,
+            hang: true,
             sound: true,
             volume: 0.6,
             shadow: true,

@@ -226,6 +226,7 @@ export component Panel inherits Window {
     in-out property <bool> run: true;
     in-out property <bool> fly: true;
     in-out property <bool> dust: true;
+    in-out property <bool> hang: true;
     in-out property <bool> sound: true;
     // Warna (satu color wheel; warna belakang otomatis)
     in-out property <image> wheel;
@@ -347,7 +348,9 @@ export component Panel inherits Window {
                 HorizontalLayout {
                     PxCheck { text: "Debu"; checked <=> root.dust; toggled => { root.changed(); } }
                     PxCheck { text: "Suara"; checked <=> root.sound; toggled => { root.changed(); } }
+                    PxCheck { text: "Gantung"; checked <=> root.hang; toggled => { root.changed(); } }
                 }
+                Label { text: "Klik kanan stickman = bergantung di kursor (Windows). Klik kanan lagi = lepas."; }
             }
 
             if root.tab == 1 : VerticalLayout {

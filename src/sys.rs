@@ -166,3 +166,23 @@ pub fn autostart(enable: bool) {
     #[cfg(not(any(windows, all(unix, not(target_os = "macos")))))]
     let _ = (enable, exe);
 }
+
+/// Posisi kursor layar + status klik kanan: `(x, y, ditekan, diklik sejak panggilan terakhir)`.
+/// Hanya Windows (overlay click-through, jadi dibaca langsung dari OS).
+pub fn cursor() -> Option<(i32, i32, bool, bool)> {
+    #[cfg(windows)]
+    unsafe {
+        use windows_sys::Win32::{
+            Foundation::POINT,
+            UI::{Input::KeyboardAndMouse::GetAsyncKeyState, WindowsAndMessaging::GetCursorPos},
+        };
+        let mut p = POINT { x: 0, y: 0 };
+        if GetCursorPos(&mut p) == 0 {
+            return None;
+        }
+        let st = GetAsyncKeyState(0x02); // VK_RBUTTON
+        Some((p.x, p.y, st < 0, st & 1 != 0))
+    }
+    #[cfg(not(windows))]
+    None
+}

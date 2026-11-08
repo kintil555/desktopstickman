@@ -4,19 +4,19 @@ use std::f32::consts::{PI, TAU};
 
 pub const S: f32 = 1.25 * 1.02;
 const R: f32 = S / 2.4;
-const HEADR: f32 = 7.5 * S;
-const NECK: f32 = 2.0 * S;
-const TORSO: f32 = 18.0 * S;
-const UA: f32 = 12.0 * S;
-const FA: f32 = 12.0 * S;
-const TH: f32 = 14.0 * S;
-const SH: f32 = 14.0 * S;
-const LEG: f32 = 28.0 * S;
+pub(crate) const HEADR: f32 = 7.5 * S;
+pub(crate) const NECK: f32 = 2.0 * S;
+pub(crate) const TORSO: f32 = 18.0 * S;
+pub(crate) const UA: f32 = 12.0 * S;
+pub(crate) const FA: f32 = 12.0 * S;
+pub(crate) const TH: f32 = 14.0 * S;
+pub(crate) const SH: f32 = 14.0 * S;
+pub(crate) const LEG: f32 = 28.0 * S;
 const A: f32 = LEG * 0.56;
 const LIFT: f32 = LEG * 0.26;
 pub const WALK: f32 = 350.0;
 const ACC: f32 = 2600.0 * WALK / 460.0;
-const GRAV: f32 = 2400.0;
+pub(crate) const GRAV: f32 = 2400.0;
 const JUMP_V: f32 = 760.0;
 
 #[derive(Clone, Copy, Default)]
@@ -29,7 +29,7 @@ fn v(x: f32, y: f32) -> V {
     V { x, y }
 }
 
-fn ik(a: V, b: V, l1: f32, l2: f32, bend: f32) -> V {
+pub(crate) fn ik(a: V, b: V, l1: f32, l2: f32, bend: f32) -> V {
     let (dx, dy) = (b.x - a.x, b.y - a.y);
     let d = dx.hypot(dy).clamp((l1 - l2).abs() + 0.01, l1 + l2 - 0.01);
     let an = ((l1 * l1 + d * d - l2 * l2) / (2.0 * l1 * d))
@@ -126,6 +126,17 @@ impl Stick {
             peak: 0.0,
             fx: Vec::new(),
         }
+    }
+
+    /// Mendarat setelah dilepas dari gantungan mouse (`x` relatif monitor, `h` = tinggi jatuh).
+    pub fn land(&mut self, x: f32, vx: f32, h: f32, rng: &mut Rng) {
+        self.x = x;
+        self.vx = vx;
+        self.oy = 0.0;
+        self.vup = 0.0;
+        self.mode = Mode::Idle;
+        self.timer = 1.0;
+        fx::spawn_land(&mut self.fx, x, fx::dust_k(h), rng);
     }
 
     pub fn on(&self) -> bool {

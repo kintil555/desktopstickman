@@ -38,10 +38,19 @@ pub fn load(path: &str) -> Option<Sheet> {
 }
 
 /// Gambar frame sprite sesuai state `s`; `o` = titik pijak (tengah-bawah frame).
-pub fn draw_player(c: &mut Canvas, sh: &Sheet, cfg: &Config, s: &Stick, o: V, seated: bool) {
+/// `hang` = (sudut ayun, titik tangan): sprite digantung dari tangan dan diputar.
+pub fn draw_player(
+    c: &mut Canvas,
+    sh: &Sheet,
+    cfg: &Config,
+    s: &Stick,
+    o: V,
+    seated: bool,
+    hang: Option<(f32, V)>,
+) {
     let k = &cfg.skin;
     let sp = s.vx.abs();
-    let a = if seated {
+    let a = if seated || hang.is_some() {
         &k.idle
     } else if s.oy > 0.0 {
         &k.jump
@@ -62,20 +71,44 @@ pub fn draw_player(c: &mut Canvas, sh: &Sheet, cfg: &Config, s: &Stick, o: V, se
     let ps = k.scale * if seated { k.seat_scale } else { 1.0 };
     let f = s.face;
     let mirror = if k.faces_left { f > 0.0 } else { f < 0.0 };
-    let (ax, ay) = (o.x + f * k.off_x as f32 * ps, o.y + k.off_y as f32 * ps);
     let (fwf, fhf) = (fw as f32, fh as f32);
+    // bergantung: bagian atas sprite di tangan; selain itu telapak kaki di `o`
+    let base = match hang {
+        Some((_, pv)) => V {
+            x: pv.x,
+            y: pv.y + fhf * ps,
+        },
+        None => o,
+    };
+    let (ax, ay) = (
+        base.x + f * k.off_x as f32 * ps,
+        base.y + k.off_y as f32 * ps,
+    );
     let cell = c.cell;
-    let gx0 = ((ax - fwf * ps / 2.0) / cell).floor().max(0.0) as usize;
-    let gx1 = (((ax + fwf * ps / 2.0) / cell).ceil().max(0.0) as usize).min(c.w);
-    let gy0 = ((ay - fhf * ps) / cell).floor().max(0.0) as usize;
-    let gy1 = ((ay / cell).ceil().max(0.0) as usize).min(c.h);
+    let (gx0, gx1, gy0, gy1) = if hang.is_some() {
+        (0, c.w, 0, c.h)
+    } else {
+        (
+            ((ax - fwf * ps / 2.0) / cell).floor().max(0.0) as usize,
+            (((ax + fwf * ps / 2.0) / cell).ceil().max(0.0) as usize).min(c.w),
+            ((ay - fhf * ps) / cell).floor().max(0.0) as usize,
+            ((ay / cell).ceil().max(0.0) as usize).min(c.h),
+        )
+    };
+    let (sn, cs) = hang.map_or((0.0, 1.0), |(t, _)| t.sin_cos());
     for gy in gy0..gy1 {
-        let ly = ((gy as f32 + 0.5) * cell - ay) / ps + fhf;
-        if !(0.0..fhf).contains(&ly) {
-            continue;
-        }
         for gx in gx0..gx1 {
-            let lx = ((gx as f32 + 0.5) * cell - ax) / ps + fwf / 2.0;
+            let (mut wx, mut wy) = ((gx as f32 + 0.5) * cell, (gy as f32 + 0.5) * cell);
+            if let Some((_, pv)) = hang {
+                // balik-putar sekitar tangan agar sprite berayun
+                let (dx, dy) = (wx - pv.x, wy - pv.y);
+                (wx, wy) = (pv.x + dx * cs - dy * sn, pv.y + dx * sn + dy * cs);
+            }
+            let ly = (wy - ay) / ps + fhf;
+            if !(0.0..fhf).contains(&ly) {
+                continue;
+            }
+            let lx = (wx - ax) / ps + fwf / 2.0;
             if !(0.0..fwf).contains(&lx) {
                 continue;
             }

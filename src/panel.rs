@@ -84,6 +84,7 @@ fn load(ui: &Panel, c: &Config) {
     ui.set_run(c.run);
     ui.set_fly(c.fly);
     ui.set_dust(c.dust);
+    ui.set_hang(c.hang);
     ui.set_sound(c.sound);
     let (h, s, v) = rgb2hsv(c.color);
     ui.set_hue(h);
@@ -135,6 +136,7 @@ fn collect(ui: &Panel) -> Config {
     c.run = ui.get_run();
     c.fly = ui.get_fly();
     c.dust = ui.get_dust();
+    c.hang = ui.get_hang();
     c.sound = ui.get_sound();
     c.color = config::parse_hex(&ui.get_hex()).unwrap_or(c.color);
     c.shadow = ui.get_shadow();
