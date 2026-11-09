@@ -345,6 +345,10 @@ export component Panel inherits Window {
     in-out property <[InstRow]> insts;
     in-out property <int> sel-id: 0;
     in-out property <string> target-name: "Default";
+    // Pertarungan
+    in-out property <bool> fight: false;
+    in-out property <float> hp: 5;
+    in-out property <float> dmg: 1;
 
     callback toggle();
     callback changed();
@@ -741,7 +745,7 @@ export component Panel inherits Window {
                 Label { text: "Pilih stickman: semua tab mengatur yang terpilih."; }
                 PxButton { text: "Default (untuk stickman baru)"; size: 16px; active: root.sel-id == 0; clicked => { root.inst-select(0); } }
                 Flickable {
-                    height: 200px;
+                    height: 130px;
                     VerticalLayout {
                         spacing: 4px;
                         for r in root.insts : HorizontalLayout {
@@ -754,6 +758,18 @@ export component Panel inherits Window {
                     }
                 }
                 Label { text: "Tambah + (bawah) = stickman baru, warna otomatis beda."; }
+                PxCheck { text: "Saling serang (mati = putih, meledak, hidup lagi 3 dtk)"; checked <=> root.fight; toggled => { root.changed(); } }
+                HorizontalLayout {
+                    spacing: 10px;
+                    VerticalLayout {
+                        Label { text: "HP: " + Math.round(root.hp); }
+                        PxSlider { minimum: 1; maximum: 50; value <=> root.hp; released => { root.changed(); } }
+                    }
+                    VerticalLayout {
+                        Label { text: "Damage: " + Math.round(root.dmg); }
+                        PxSlider { minimum: 1; maximum: 20; value <=> root.dmg; released => { root.changed(); } }
+                    }
+                }
             }
 
             if root.tab == 5 : VerticalLayout {

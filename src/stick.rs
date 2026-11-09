@@ -20,6 +20,8 @@ pub(crate) const GRAV: f32 = 2400.0;
 const JUMP_V: f32 = 760.0;
 /// Durasi animasi mendarat (jongkok lalu bangkit).
 const LAND_T: f32 = 0.4;
+/// Lama satu ayunan serangan (detik).
+pub const ATK_T: f32 = 0.32;
 
 fn ease(x: f32) -> f32 {
     let x = x.clamp(0.0, 1.0);
@@ -102,6 +104,10 @@ pub struct Stick {
     /// Sisa waktu animasi mendarat + kedalaman jongkok 0..1.
     land_t: f32,
     land_k: f32,
+    /// Sasaran serang: `(x lawan, jarak berhenti)`; None = gerak acak.
+    pub goal: Option<(f32, f32)>,
+    atk_t: f32,
+    atk_arm: usize,
 }
 
 pub struct Pose {
@@ -151,7 +157,45 @@ impl Stick {
             arm0: 0.0,
             land_t: 0.0,
             land_k: 0.0,
+            goal: None,
+            atk_t: 0.0,
+            atk_arm: 0,
         }
+    }
+
+    /// Mulai ayunan serangan dengan lengan `arm` (0 = depan, 1 = belakang).
+    pub fn attack(&mut self, arm: usize) {
+        self.atk_t = ATK_T;
+        self.atk_arm = arm.min(1);
+    }
+
+    pub fn attacking(&self) -> bool {
+        self.atk_t > 0.0
+    }
+
+    /// Ayunan sudah sampai titik pukul (pertengahan akhir).
+    pub fn hit_ready(&self) -> bool {
+        self.atk_t > 0.0 && self.atk_t <= ATK_T * 0.45
+    }
+
+    /// Terpental oleh pukulan: dorongan mendatar + lompatan kecil.
+    pub fn knock(&mut self, vx: f32) {
+        self.vx = vx;
+        if self.fly == Fly::No && self.on() {
+            self.vup = 320.0;
+            self.oy = 0.01;
+            self.peak = 0.0;
+            self.fall_t = 0.0;
+            self.arm0 = 0.0;
+        }
+    }
+
+    /// Putaran tambahan item saat mengayun (radian, searah jarum jam untuk hadap kanan).
+    pub fn swing(&self) -> f32 {
+        if self.atk_t <= 0.0 {
+            return 0.0;
+        }
+        (-0.6 + 2.8 * ease(1.0 - self.atk_t / ATK_T)) * self.face
     }
 
     /// Mendarat setelah dilepas dari gantungan mouse (`x` relatif monitor, `h` = tinggi jatuh).
@@ -199,6 +243,7 @@ impl Stick {
         fx::update(&mut self.fx, dt);
         fx::update_air(&mut self.smoke, &mut self.sparks, dt);
         self.land_t = (self.land_t - dt).max(0.0);
+        self.atk_t = (self.atk_t - dt).max(0.0);
         if self.x < margin {
             self.dir = 1.0;
         } else if self.x > max_x - margin {
@@ -221,6 +266,18 @@ impl Stick {
             self.timer = 1.5 + rng.f() * 3.5;
             self.dir = if rng.f() < 0.5 { -1.0 } else { 1.0 };
         }
+        // sasaran serang: kejar lawan, berhenti di jangkauan
+        if let Some((g, stop)) = self.goal {
+            let dx = g - self.x;
+            self.dir = if dx < 0.0 { -1.0 } else { 1.0 };
+            self.mode = if dx.abs() <= stop {
+                Mode::Idle
+            } else if dx.abs() > 220.0 && cfg.run {
+                Mode::Run
+            } else {
+                Mode::Walk
+            };
+        }
         let target = match self.mode {
             Mode::Idle => 0.0,
             Mode::Walk => WALK * 0.4,
@@ -233,10 +290,13 @@ impl Stick {
         if self.vx.abs() > 5.0 {
             self.face = self.vx.signum();
         }
+        if let Some((g, _)) = self.goal {
+            self.face = if g < self.x { -1.0 } else { 1.0 };
+        }
         self.x = (self.x + self.vx * dt).clamp(0.0, max_x);
 
         self.fly_cd -= dt;
-        if cfg.fly && self.fly_cd <= 0.0 && self.on() {
+        if cfg.fly && self.goal.is_none() && self.fly_cd <= 0.0 && self.on() {
             self.fly = Fly::Up;
             self.alt_to = 100.0 + rng.f() * (max_alt - 100.0).max(0.0);
             self.thr = 1.0;
@@ -487,7 +547,14 @@ impl Stick {
             v(h.x + (r.x - h.x) * au, h.y + (r.y - h.y) * au)
         };
         let (h0, h1) = (up(-1.0, h0), up(1.0, h1));
-        let arms = [h0, h1].map(|h| (ik(sh, h, UA, FA, f), h));
+        let mut hands = [h0, h1];
+        if self.atk_t > 0.0 {
+            // ayunan: dari belakang-atas, lewat atas kepala, ke depan-bawah
+            let a = -0.6 + 2.8 * ease(1.0 - self.atk_t / ATK_T);
+            let r = (UA + FA) * 0.92;
+            hands[self.atk_arm] = v(sh.x + f * a.sin() * r, sh.y - a.cos() * r);
+        }
+        let arms = hands.map(|h| (ik(sh, h, UA, FA, f), h));
         Pose {
             hip,
             sh,

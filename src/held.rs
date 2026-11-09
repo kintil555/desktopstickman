@@ -37,6 +37,11 @@ pub fn pick<'a>(items: &'a [Item], id: u32, arts: &'a Arts) -> Option<Draw<'a>> 
     Some(Draw { item, art })
 }
 
+/// Jangkauan tambahan (px layar) yang diberikan item saat menyerang.
+pub fn length(d: Draw, cell: f32) -> f32 {
+    d.art.w.max(d.art.h) as f32 * d.item.scale * cell * 0.6
+}
+
 /// Item berikutnya dalam siklus: kosong -> item 1 -> item 2 -> ... -> kosong.
 pub fn next(items: &[Item], cur: u32) -> u32 {
     match items.iter().position(|i| i.id == cur) {
@@ -47,7 +52,7 @@ pub fn next(items: &[Item], cur: u32) -> u32 {
 
 /// Gambar item di node tangan. Tiap sel kanvas mengambil satu piksel gambar (tanpa blur),
 /// piksel dengan alpha < 128 dilewati; yang lain digambar penuh.
-pub fn draw(c: &mut Canvas, d: Draw, q: &Pose, o: V, face: f32) {
+pub fn draw(c: &mut Canvas, d: Draw, q: &Pose, o: V, face: f32, extra: f32) {
     let (it, art) = (d.item, d.art);
     if art.w == 0 || art.h == 0 {
         return;
@@ -60,7 +65,7 @@ pub fn draw(c: &mut Canvas, d: Draw, q: &Pose, o: V, face: f32) {
     } else {
         0.0
     };
-    let (sn, cs) = (follow + it.angle.to_radians() * m).sin_cos();
+    let (sn, cs) = (follow + it.angle.to_radians() * m + extra).sin_cos();
     let anchor = V {
         x: o.x + hand.x + it.off_x * m,
         y: o.y + hand.y + it.off_y,

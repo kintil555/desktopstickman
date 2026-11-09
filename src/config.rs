@@ -250,6 +250,10 @@ pub struct Config {
     /// Pustaka item (dipakai bersama); `held` = item yang dipegang (0 = tangan kosong).
     pub items: Vec<Item>,
     pub held: u32,
+    /// Stickman saling serang (global); `hp` dan `dmg` per stickman.
+    pub fight: bool,
+    pub hp: u32,
+    pub dmg: u32,
 }
 
 impl Default for Config {
@@ -281,6 +285,9 @@ impl Default for Config {
             stickmen: Vec::new(),
             items: Vec::new(),
             held: 0,
+            fight: false,
+            hp: 5,
+            dmg: 1,
         }
     }
 }
@@ -334,6 +341,8 @@ impl Config {
         self.skin = o.skin.clone();
         self.body = o.body.clone();
         self.held = o.held;
+        self.hp = o.hp;
+        self.dmg = o.dmg;
     }
 
     pub fn sanitize(&mut self) {
@@ -343,6 +352,8 @@ impl Config {
         for it in &mut self.items {
             it.sanitize();
         }
+        self.hp = self.hp.clamp(1, 100);
+        self.dmg = self.dmg.clamp(1, 100);
         self.cell = self.cell.clamp(1, 8);
         self.speed = self.speed.clamp(0.1, 3.0);
         self.volume = self.volume.clamp(0.0, 1.0);

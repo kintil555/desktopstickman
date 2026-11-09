@@ -1,6 +1,7 @@
 #![cfg_attr(all(windows, not(debug_assertions)), windows_subsystem = "windows")]
 
 mod config;
+mod fight;
 mod fx;
 mod hang;
 mod held;
@@ -40,7 +41,13 @@ fn seed() -> u32 {
         .map_or(1, |d| d.subsec_nanos())
 }
 
-fn render(s: &Stick, cfg: &Config, sheet: Option<&skin::Sheet>, hi: Option<held::Draw>) -> Canvas {
+fn render(
+    s: &Stick,
+    cfg: &Config,
+    sheet: Option<&skin::Sheet>,
+    hi: Option<held::Draw>,
+    white: f32,
+) -> Canvas {
     let mut c = Canvas::new(WIN_W, WIN_H, cfg.cell);
     let floor_y = FEET_Y + s.alt;
     let ox = WIN_W as f32 / 2.0;
@@ -59,7 +66,7 @@ fn render(s: &Stick, cfg: &Config, sheet: Option<&skin::Sheet>, hi: Option<held:
             None => c.draw(&pose, o, cfg),
         }
         if let Some(d) = hi {
-            held::draw(&mut c, d, &pose, o, s.face);
+            held::draw(&mut c, d, &pose, o, s.face, s.swing());
         }
     } else {
         let o = V {
@@ -68,6 +75,7 @@ fn render(s: &Stick, cfg: &Config, sheet: Option<&skin::Sheet>, hi: Option<held:
         };
         veh::draw(&mut c, s, o, cfg, floor_y, sheet);
     }
+    fight::whiten(&mut c, white);
     shadow::apply(&mut c, cfg);
     c
 }
@@ -79,6 +87,7 @@ fn render_hang(
     cfg: &Config,
     sheet: Option<&skin::Sheet>,
     hi: Option<held::Draw>,
+    white: f32,
 ) -> Canvas {
     let mut c = Canvas::new(WIN_W, WIN_H, cfg.cell);
     let o = V {
@@ -95,8 +104,9 @@ fn render_hang(
         None => c.draw(&h.pose(), o, cfg),
     }
     if let Some(d) = hi {
-        held::draw(&mut c, d, &h.pose(), o, h.face);
+        held::draw(&mut c, d, &h.pose(), o, h.face, 0.0);
     }
+    fight::whiten(&mut c, white);
     shadow::apply(&mut c, cfg);
     c
 }
@@ -136,7 +146,7 @@ fn dump(path: &str, fly: bool) {
         for _ in 0..2 {
             s.update(step, &cfg, &mut rng, 1200.0, 300.0);
         }
-        let c = render(&s, &cfg, None, None);
+        let c = render(&s, &cfg, None, None, 0.0);
         for y in 0..h {
             for x in 0..w {
                 let p = c.px[(y / cfg.cell as usize) * c.w + x / cfg.cell as usize];
@@ -204,6 +214,8 @@ struct Agent {
     /// Hemat: lewati present bila gambar & posisi sama.
     prev: (Vec<u32>, PhysicalPosition<i32>),
     hang: Option<Hang>,
+    /// HP, jeda serang, kilat putih, ledakan saat mati.
+    f: fight::Fighter,
     rb_prev: bool,
     /// true = ikut kursor lewat tombol pintas (toggle); false = lewat tahan klik kanan.
     hang_key: bool,
@@ -226,6 +238,7 @@ impl Agent {
         win.set_visible(env.shown);
         let out = present::Presenter::new(&win, WIN_W, WIN_H);
         let held = cfg.held;
+        let hp = cfg.hp as i32;
         let mut rng = Rng::new(seed() ^ id.wrapping_mul(0x9E37_79B1));
         // posisi awal acak supaya stickman tidak bertumpuk
         let s = Stick::new(env.mon_size.width as f32 * (0.1 + 0.8 * rng.f()));
@@ -240,15 +253,79 @@ impl Agent {
             last: Instant::now(),
             prev: (Vec::new(), PhysicalPosition::new(0, 0)),
             hang: None,
+            f: fight::Fighter::new(hp),
             rb_prev: false,
             hang_key: false,
         }
     }
 
-    /// Satu frame: ikut kursor, gerak, gambar, tampilkan.
-    fn step(&mut self, env: &mut Env, now: Instant) {
+    fn present(&mut self, img: Canvas, pos: PhysicalPosition<i32>) {
+        if self.prev.1 != pos || self.prev.0 != img.px {
+            self.out.present(&img, self.cfg.cell as usize, pos);
+            self.prev = (img.px, pos);
+        }
+    }
+
+    /// Mati: tubuh memutih 0,3 dtk, lalu meledak jadi partikel putih; hidup lagi setelah 3 dtk.
+    fn step_dead(&mut self, env: &mut Env, now: Instant) {
         let dt = now.duration_since(self.last).as_secs_f32().min(0.05);
         self.last = now;
+        self.f.t_dead += dt;
+        if self.f.t_dead >= fight::RESPAWN_T {
+            self.respawn(env);
+            return;
+        }
+        if self.f.hidden {
+            return;
+        }
+        env.busy = true;
+        let floor_y = env.mon_pos.y + env.mon_size.height as i32 - self.cfg.floor_offset;
+        let pos = PhysicalPosition::new(
+            env.mon_pos.x + self.s.x as i32 - WIN_W as i32 / 2,
+            floor_y - FEET_Y as i32 - self.s.alt as i32,
+        );
+        if self.f.t_dead < fight::FLASH_T {
+            let hi = held::pick(&self.cfg.items, self.held, &env.arts);
+            let white = self.f.t_dead / fight::FLASH_T;
+            let img = render(&self.s, &self.cfg, env.sheet.as_ref(), hi, white);
+            self.present(img, pos);
+            return;
+        }
+        let (cx, cy) = (WIN_W as f32 / 2.0, FEET_Y - 42.0);
+        if !self.f.burst {
+            self.f.explode(&mut self.rng, cx, cy);
+        }
+        self.f.update(dt);
+        let mut img = Canvas::new(WIN_W, WIN_H, self.cfg.cell);
+        fight::draw_burst(&mut img, &self.f, cx, cy);
+        self.present(img, pos);
+        if self.f.burst_done() {
+            self.win.set_visible(false);
+            self.f.hidden = true;
+        }
+    }
+
+    /// Hidup lagi di posisi acak dengan HP penuh (muncul dari putih).
+    fn respawn(&mut self, env: &Env) {
+        let x = env.mon_size.width as f32 * (0.1 + 0.8 * self.rng.f());
+        self.s = Stick::new(x);
+        self.f = fight::Fighter::new(self.cfg.hp as i32);
+        self.f.born = fight::FLASH_T;
+        self.hang = None;
+        self.win.set_visible(env.shown);
+        self.prev.0.clear();
+    }
+
+    /// Satu frame: ikut kursor, gerak, gambar, tampilkan.
+    fn step(&mut self, env: &mut Env, now: Instant) {
+        if !self.f.alive {
+            self.step_dead(env, now);
+            return;
+        }
+        let dt = now.duration_since(self.last).as_secs_f32().min(0.05);
+        self.last = now;
+        self.f.hit = (self.f.hit - dt).max(0.0);
+        self.f.born = (self.f.born - dt).max(0.0);
         let (mon_pos, mon_size) = (env.mon_pos, env.mon_size);
         let max_x = mon_size.width as f32;
         let max_alt = (mon_size.height as i32 - self.cfg.floor_offset - 250).max(100) as f32;
@@ -304,13 +381,14 @@ impl Agent {
         }
         let sheet = env.sheet.as_ref();
         let hi = held::pick(&self.cfg.items, self.held, &env.arts);
+        let white = self.f.white();
         let (pos, img) = match self.hang.as_ref() {
             Some(h) if h.phase != Phase::Fall => (
                 PhysicalPosition::new(
                     h.hand.x as i32 - WIN_W as i32 / 2,
                     h.hand.y as i32 - HAND_Y as i32,
                 ),
-                render_hang(h, &self.s, &self.cfg, sheet, hi),
+                render_hang(h, &self.s, &self.cfg, sheet, hi, white),
             ),
             Some(h) => {
                 // jatuh bebas: pose udara, jendela mengikuti telapak kaki
@@ -320,7 +398,7 @@ impl Agent {
                         h.feet.x as i32 - WIN_W as i32 / 2,
                         h.feet.y as i32 - FEET_Y as i32,
                     ),
-                    render(&self.s, &self.cfg, sheet, hi),
+                    render(&self.s, &self.cfg, sheet, hi, white),
                 )
             }
             None => {
@@ -329,7 +407,7 @@ impl Agent {
                     mon_pos.x + self.s.x as i32 - WIN_W as i32 / 2,
                     floor_y - FEET_Y as i32 - self.s.alt as i32,
                 );
-                (pos, render(&self.s, &self.cfg, sheet, hi))
+                (pos, render(&self.s, &self.cfg, sheet, hi, white))
             }
         };
         let idle = self.hang.is_none()
@@ -338,9 +416,63 @@ impl Agent {
             && self.s.vx.abs() < 1.0
             && self.s.fx.is_empty();
         env.busy |= !idle;
-        if self.prev.1 != pos || self.prev.0 != img.px {
-            self.out.present(&img, self.cfg.cell as usize, pos);
-            self.prev = (img.px, pos);
+        self.present(img, pos);
+    }
+}
+
+/// Satu tick pertarungan: cari lawan terdekat, kejar, pukul; kena = HP berkurang, HP habis = mati.
+fn fight_tick(agents: &mut [Agent], arts: &held::Arts, dt: f32, on: bool) {
+    let pos: Vec<(f32, bool)> = agents
+        .iter()
+        .map(|a| (a.s.x, a.f.alive && a.hang.is_none() && a.s.fly == Fly::No))
+        .collect();
+    let mut hits: Vec<(usize, i32, f32)> = Vec::new();
+    for (i, a) in agents.iter_mut().enumerate() {
+        a.f.cd = (a.f.cd - dt).max(0.0);
+        if !on || !pos[i].1 {
+            a.s.goal = None;
+            a.f.pending = false;
+            continue;
+        }
+        let mut best: Option<(usize, f32)> = None;
+        for (j, &(x, ok)) in pos.iter().enumerate() {
+            let d = (x - a.s.x).abs();
+            if j != i && ok && best.is_none_or(|b| d < b.1) {
+                best = Some((j, d));
+            }
+        }
+        let Some((j, d)) = best else {
+            a.s.goal = None;
+            continue;
+        };
+        let weapon = held::pick(&a.cfg.items, a.held, arts);
+        let reach = 44.0 + weapon.map_or(0.0, |w| held::length(w, a.cfg.cell as f32));
+        a.s.goal = Some((pos[j].0, reach * 0.8));
+        if a.f.cd <= 0.0 && !a.s.attacking() && d <= reach {
+            a.s.attack(weapon.map_or(0, |w| w.item.hand as usize));
+            a.f.pending = true;
+            a.f.cd = 0.7 + a.rng.f() * 0.7;
+        }
+        if a.f.pending && a.s.hit_ready() {
+            a.f.pending = false;
+            if d <= reach * 1.3 {
+                let dir = if pos[j].0 < a.s.x { -1.0 } else { 1.0 };
+                hits.push((j, a.cfg.dmg as i32, dir));
+            }
+        }
+    }
+    for (j, dmg, dir) in hits {
+        let t = &mut agents[j];
+        if !t.f.alive {
+            continue;
+        }
+        t.f.hp -= dmg;
+        t.f.hit = 0.1;
+        t.s.knock(dir * 260.0);
+        if t.f.hp <= 0 {
+            t.f.die();
+            t.s.goal = None;
+            t.s.vx = 0.0;
         }
     }
 }
@@ -387,6 +519,7 @@ fn overlay() {
     sync_agents(&mut agents, &el, &cfg, &env);
     let (mut next, mut chk) = (Instant::now(), Instant::now());
     let mut key_prev = [false; 5];
+    let mut last_tick = Instant::now();
 
     let _ = el.run(move |event, elwt| match event {
         Event::AboutToWait => {
@@ -427,6 +560,9 @@ fn overlay() {
                 env.taken = agents
                     .iter()
                     .any(|a| a.hang.as_ref().is_some_and(|h| !h.falling()));
+                let dt_tick = now.duration_since(last_tick).as_secs_f32().min(0.05);
+                last_tick = now;
+                fight_tick(&mut agents, &env.arts, dt_tick, cfg.fight);
                 for a in &mut agents {
                     if env.edge[3] {
                         a.win.set_visible(env.shown);

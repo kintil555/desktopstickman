@@ -104,6 +104,9 @@ fn live_cfg(ui: &Panel, base: &Config) -> Config {
     c.speed = ui.get_speed();
     c.cell = ui.get_cell().round() as u32;
     c.held = ui.get_held_id() as u32;
+    c.fight = ui.get_fight();
+    c.hp = ui.get_hp().round() as u32;
+    c.dmg = ui.get_dmg().round() as u32;
     c.shadow = ui.get_shadow();
     c.shadow_opacity = ui.get_shadow_opacity();
     c.shadow_dx = ui.get_shadow_dx().round() as i32;
@@ -138,7 +141,7 @@ fn preview(
     let pose = st.pose();
     cv.draw(&pose, o, &cfg);
     if let Some(d) = crate::held::pick(&cfg.items, cfg.held, arts) {
-        crate::held::draw(&mut cv, d, &pose, o, st.face);
+        crate::held::draw(&mut cv, d, &pose, o, st.face, 0.0);
     }
     shadow::apply(&mut cv, &cfg);
     let mut buf = SharedPixelBuffer::<Rgba8Pixel>::new(cv.w as u32, cv.h as u32);
@@ -211,6 +214,9 @@ fn load(ui: &Panel, c: &Config) {
     set_keys(ui, c);
     update_grid(ui, &c.skin);
     ui.set_held_id(c.held as i32);
+    ui.set_fight(c.fight);
+    ui.set_hp(c.hp as f32);
+    ui.set_dmg(c.dmg as f32);
     refresh_insts(ui, c);
     refresh_items(ui, c);
 }
