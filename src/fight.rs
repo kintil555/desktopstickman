@@ -5,8 +5,6 @@ use crate::stick::{Canvas, Rng};
 
 /// Lama tubuh memutih sebelum meledak.
 pub const FLASH_T: f32 = 0.3;
-/// Detik sejak mati sampai hidup lagi.
-pub const RESPAWN_T: f32 = 3.0;
 const RING_T: f32 = 0.35;
 
 const B4: [[u8; 4]; 4] = [[0, 8, 2, 10], [12, 4, 14, 6], [3, 11, 1, 9], [15, 7, 13, 5]];

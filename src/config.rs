@@ -254,6 +254,15 @@ pub struct Config {
     pub fight: bool,
     pub hp: u32,
     pub dmg: u32,
+    /// Tim (0 = tanpa tim: semua dianggap lawan); satu tim tidak saling serang. Per stickman.
+    pub team: u32,
+    /// Event: hidup lagi setelah `respawn_t` detik, jeda serang rata-rata, kekuatan dorongan,
+    /// dan senjata acak otomatis bagi yang tangannya kosong (global).
+    pub respawn: bool,
+    pub respawn_t: f32,
+    pub atk_gap: f32,
+    pub knock: f32,
+    pub auto_item: bool,
 }
 
 impl Default for Config {
@@ -288,6 +297,12 @@ impl Default for Config {
             fight: false,
             hp: 5,
             dmg: 1,
+            team: 0,
+            respawn: true,
+            respawn_t: 3.0,
+            atk_gap: 1.0,
+            knock: 260.0,
+            auto_item: true,
         }
     }
 }
@@ -343,6 +358,7 @@ impl Config {
         self.held = o.held;
         self.hp = o.hp;
         self.dmg = o.dmg;
+        self.team = o.team;
     }
 
     pub fn sanitize(&mut self) {
@@ -354,6 +370,10 @@ impl Config {
         }
         self.hp = self.hp.clamp(1, 100);
         self.dmg = self.dmg.clamp(1, 100);
+        self.team = self.team.min(8);
+        self.respawn_t = self.respawn_t.clamp(0.5, 30.0);
+        self.atk_gap = self.atk_gap.clamp(0.2, 5.0);
+        self.knock = self.knock.clamp(0.0, 800.0);
         self.cell = self.cell.clamp(1, 8);
         self.speed = self.speed.clamp(0.1, 3.0);
         self.volume = self.volume.clamp(0.0, 1.0);

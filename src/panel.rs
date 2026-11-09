@@ -214,6 +214,12 @@ fn load(ui: &Panel, c: &Config) {
     ui.set_fight(c.fight);
     ui.set_hp(c.hp as f32);
     ui.set_dmg(c.dmg as f32);
+    ui.set_team(c.team as f32);
+    ui.set_respawn(c.respawn);
+    ui.set_respawn_t(c.respawn_t);
+    ui.set_atk_gap(c.atk_gap);
+    ui.set_knock(c.knock);
+    ui.set_auto_item(c.auto_item);
     refresh_insts(ui, c);
     refresh_items(ui, c);
 }
@@ -350,6 +356,12 @@ fn collect(ui: &Panel) -> Config {
     c.fight = ui.get_fight();
     c.hp = ui.get_hp().round() as u32;
     c.dmg = ui.get_dmg().round() as u32;
+    c.team = ui.get_team().round() as u32;
+    c.respawn = ui.get_respawn();
+    c.respawn_t = ui.get_respawn_t();
+    c.atk_gap = ui.get_atk_gap();
+    c.knock = ui.get_knock();
+    c.auto_item = ui.get_auto_item();
     c.floor_offset = ui.get_floor_offset().round() as i32;
     c.volume = ui.get_volume();
     c.jump = ui.get_jump();

@@ -349,6 +349,12 @@ export component Panel inherits Window {
     in-out property <bool> fight: false;
     in-out property <float> hp: 5;
     in-out property <float> dmg: 1;
+    in-out property <float> team: 0;
+    in-out property <bool> respawn: true;
+    in-out property <float> respawn-t: 3;
+    in-out property <float> atk-gap: 1;
+    in-out property <float> knock: 260;
+    in-out property <bool> auto-item: true;
 
     callback toggle();
     callback changed();
@@ -409,18 +415,25 @@ export component Panel inherits Window {
             }
         }
 
-        HorizontalLayout {
+        VerticalLayout {
             spacing: 4px;
-            PxButton { text: "Umum"; size: 15px; active: root.tab == 0; clicked => { root.tab = 0; } }
-            PxButton { text: "Warna"; size: 15px; active: root.tab == 1; clicked => { root.tab = 1; } }
-            PxButton { text: "Shadow"; size: 15px; active: root.tab == 2; clicked => { root.tab = 2; } }
-            PxButton { text: "Model"; size: 15px; active: root.tab == 6; clicked => { root.tab = 6; } }
-            PxButton { text: "Skin"; size: 15px; active: root.tab == 3; clicked => { root.tab = 3; } }
-            PxButton { text: "Anim"; size: 15px; active: root.tab == 4; clicked => { root.tab = 4; } }
-            PxButton { text: "Tombol"; size: 15px; active: root.tab == 7; clicked => { root.tab = 7; } }
-            PxButton { text: "Item"; size: 15px; active: root.tab == 9; clicked => { root.tab = 9; } }
-            PxButton { text: "Daftar"; size: 15px; active: root.tab == 8; clicked => { root.tab = 8; } }
-            PxButton { text: "Sistem"; size: 15px; active: root.tab == 5; clicked => { root.tab = 5; } }
+            HorizontalLayout {
+                spacing: 4px;
+                PxButton { text: "Umum"; size: 15px; active: root.tab == 0; clicked => { root.tab = 0; } }
+                PxButton { text: "Warna"; size: 15px; active: root.tab == 1; clicked => { root.tab = 1; } }
+                PxButton { text: "Shadow"; size: 15px; active: root.tab == 2; clicked => { root.tab = 2; } }
+                PxButton { text: "Model"; size: 15px; active: root.tab == 6; clicked => { root.tab = 6; } }
+                PxButton { text: "Skin"; size: 15px; active: root.tab == 3; clicked => { root.tab = 3; } }
+                PxButton { text: "Anim"; size: 15px; active: root.tab == 4; clicked => { root.tab = 4; } }
+            }
+            HorizontalLayout {
+                spacing: 4px;
+                PxButton { text: "Tombol"; size: 15px; active: root.tab == 7; clicked => { root.tab = 7; } }
+                PxButton { text: "Item"; size: 15px; active: root.tab == 9; clicked => { root.tab = 9; } }
+                PxButton { text: "Daftar"; size: 15px; active: root.tab == 8; clicked => { root.tab = 8; } }
+                PxButton { text: "Serang"; size: 15px; active: root.tab == 10; clicked => { root.tab = 10; } }
+                PxButton { text: "Sistem"; size: 15px; active: root.tab == 5; clicked => { root.tab = 5; } }
+            }
         }
 
         Rectangle {
@@ -739,13 +752,51 @@ export component Panel inherits Window {
                 }
             }
 
+            if root.tab == 10 : VerticalLayout {
+                spacing: 4px;
+                alignment: start;
+                PxCheck { text: "Saling serang (event aktif)"; checked <=> root.fight; toggled => { root.changed(); } }
+                Label { text: "Menyalakan lagi = ronde baru (semua hidup, HP penuh)."; }
+                HorizontalLayout {
+                    PxCheck { text: "Respawn"; checked <=> root.respawn; toggled => { root.changed(); } }
+                    PxCheck { text: "Senjata acak"; checked <=> root.auto-item; toggled => { root.changed(); } }
+                }
+                HorizontalLayout {
+                    spacing: 10px;
+                    VerticalLayout {
+                        Label { text: "Respawn: " + Math.round(root.respawn-t * 10) / 10 + " dtk"; }
+                        PxSlider { minimum: 1; maximum: 15; value <=> root.respawn-t; released => { root.changed(); } }
+                    }
+                    VerticalLayout {
+                        Label { text: "Jeda serang: " + Math.round(root.atk-gap * 10) / 10 + " dtk"; }
+                        PxSlider { minimum: 0.3; maximum: 3; value <=> root.atk-gap; released => { root.changed(); } }
+                    }
+                }
+                Label { text: "Dorongan: " + Math.round(root.knock); }
+                PxSlider { minimum: 0; maximum: 600; value <=> root.knock; released => { root.changed(); } }
+                Label { text: "Per stickman (pilih di tab Daftar):"; }
+                HorizontalLayout {
+                    spacing: 10px;
+                    VerticalLayout {
+                        Label { text: "HP: " + Math.round(root.hp); }
+                        PxSlider { minimum: 1; maximum: 50; value <=> root.hp; released => { root.changed(); } }
+                    }
+                    VerticalLayout {
+                        Label { text: "Damage: " + Math.round(root.dmg); }
+                        PxSlider { minimum: 1; maximum: 20; value <=> root.dmg; released => { root.changed(); } }
+                    }
+                }
+                Label { text: "Tim: " + Math.round(root.team) + " (0 = semua musuh)"; }
+                PxSlider { minimum: 0; maximum: 8; value <=> root.team; released => { root.changed(); } }
+            }
+
             if root.tab == 8 : VerticalLayout {
                 spacing: 4px;
                 alignment: start;
                 Label { text: "Pilih stickman: semua tab mengatur yang terpilih."; }
                 PxButton { text: "Default (untuk stickman baru)"; size: 16px; active: root.sel-id == 0; clicked => { root.inst-select(0); } }
                 Flickable {
-                    height: 130px;
+                    height: 200px;
                     VerticalLayout {
                         spacing: 4px;
                         for r in root.insts : HorizontalLayout {
@@ -758,18 +809,6 @@ export component Panel inherits Window {
                     }
                 }
                 Label { text: "Tambah + (bawah) = stickman baru, warna otomatis beda."; }
-                PxCheck { text: "Saling serang (mati = putih, meledak, hidup lagi 3 dtk)"; checked <=> root.fight; toggled => { root.changed(); } }
-                HorizontalLayout {
-                    spacing: 10px;
-                    VerticalLayout {
-                        Label { text: "HP: " + Math.round(root.hp); }
-                        PxSlider { minimum: 1; maximum: 50; value <=> root.hp; released => { root.changed(); } }
-                    }
-                    VerticalLayout {
-                        Label { text: "Damage: " + Math.round(root.dmg); }
-                        PxSlider { minimum: 1; maximum: 20; value <=> root.dmg; released => { root.changed(); } }
-                    }
-                }
             }
 
             if root.tab == 5 : VerticalLayout {

@@ -274,7 +274,7 @@ impl Agent {
         let dt = now.duration_since(self.last).as_secs_f32().min(0.05);
         self.last = now;
         self.f.t_dead += dt;
-        if self.f.t_dead >= fight::RESPAWN_T {
+        if self.cfg.respawn && self.f.t_dead >= self.cfg.respawn_t {
             self.respawn(env);
             return;
         }
@@ -432,16 +432,18 @@ fn fight_tick(agents: &mut [Agent], arts: &held::Arts, dt: f32, on: bool) {
         .iter()
         .map(|a| (a.s.x, a.f.alive && a.hang.is_none() && a.s.fly == Fly::No))
         .collect();
+    let team: Vec<u32> = agents.iter().map(|a| a.cfg.team).collect();
     let mut hits: Vec<(usize, i32, f32)> = Vec::new();
     for (i, a) in agents.iter_mut().enumerate() {
         a.f.cd = (a.f.cd - dt).max(0.0);
         // senjata otomatis: tangan kosong -> pilih item acak dari pustaka (hanya saat saling serang)
-        if on && a.held == 0 && !a.cfg.items.is_empty() {
+        let auto_on = on && a.cfg.auto_item;
+        if auto_on && a.held == 0 && !a.cfg.items.is_empty() {
             let n = a.cfg.items.len();
             let k = ((a.rng.f() * n as f32) as usize).min(n - 1);
             a.held = a.cfg.items[k].id;
             a.auto = true;
-        } else if !on && a.auto {
+        } else if !auto_on && a.auto {
             a.held = a.cfg.held;
             a.auto = false;
         }
@@ -453,7 +455,8 @@ fn fight_tick(agents: &mut [Agent], arts: &held::Arts, dt: f32, on: bool) {
         let mut best: Option<(usize, f32)> = None;
         for (j, &(x, ok)) in pos.iter().enumerate() {
             let d = (x - a.s.x).abs();
-            if j != i && ok && best.is_none_or(|b| d < b.1) {
+            let foe = a.cfg.team == 0 || team[j] != a.cfg.team;
+            if j != i && ok && foe && best.is_none_or(|b| d < b.1) {
                 best = Some((j, d));
             }
         }
@@ -467,24 +470,24 @@ fn fight_tick(agents: &mut [Agent], arts: &held::Arts, dt: f32, on: bool) {
         if a.f.cd <= 0.0 && !a.s.attacking() && d <= reach {
             a.s.attack(weapon.map_or(0, |w| w.item.hand as usize));
             a.f.pending = true;
-            a.f.cd = 0.7 + a.rng.f() * 0.7;
+            a.f.cd = a.cfg.atk_gap * (0.7 + a.rng.f() * 0.6);
         }
         if a.f.pending && a.s.hit_ready() {
             a.f.pending = false;
             if d <= reach * 1.3 {
                 let dir = if pos[j].0 < a.s.x { -1.0 } else { 1.0 };
-                hits.push((j, a.cfg.dmg as i32, dir));
+                hits.push((j, a.cfg.dmg as i32, dir * a.cfg.knock));
             }
         }
     }
-    for (j, dmg, dir) in hits {
+    for (j, dmg, push) in hits {
         let t = &mut agents[j];
         if !t.f.alive {
             continue;
         }
         t.f.hp -= dmg;
         t.f.hit = 0.1;
-        t.s.knock(dir * 260.0);
+        t.s.knock(push);
         if t.f.hp <= 0 {
             t.f.die();
             t.s.goal = None;
@@ -549,10 +552,17 @@ fn overlay() {
                     let mt = Config::mtime();
                     if mt != cfg_mtime {
                         cfg_mtime = mt;
+                        let was_fight = cfg.fight;
                         cfg = Config::load();
                         env.sheet = load_sheet(&cfg);
                         held::sync(&mut env.arts, &cfg.items);
                         sync_agents(&mut agents, elwt, &cfg, &env);
+                        // event dinyalakan = ronde baru: semua hidup lagi dengan HP penuh
+                        if cfg.fight && !was_fight {
+                            for a in &mut agents {
+                                a.respawn(&env);
+                            }
+                        }
                         // semua dihapus dari daftar (di panel) = overlay berhenti
                         if agents.is_empty() {
                             elwt.exit();
@@ -592,7 +602,12 @@ fn overlay() {
                     if env.edge[4] {
                         a.held = held::next(&a.cfg.items, a.held);
                     }
-                    a.win.request_redraw();
+                    if a.f.hidden {
+                        // jendela tersembunyi tak menerima event gambar: respawn dihitung manual
+                        a.step(&mut env, now);
+                    } else {
+                        a.win.request_redraw();
+                    }
                 }
             }
             elwt.set_control_flow(ControlFlow::WaitUntil(next));
