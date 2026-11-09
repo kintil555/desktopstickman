@@ -104,9 +104,6 @@ fn live_cfg(ui: &Panel, base: &Config) -> Config {
     c.speed = ui.get_speed();
     c.cell = ui.get_cell().round() as u32;
     c.held = ui.get_held_id() as u32;
-    c.fight = ui.get_fight();
-    c.hp = ui.get_hp().round() as u32;
-    c.dmg = ui.get_dmg().round() as u32;
     c.shadow = ui.get_shadow();
     c.shadow_opacity = ui.get_shadow_opacity();
     c.shadow_dx = ui.get_shadow_dx().round() as i32;
@@ -349,6 +346,10 @@ fn collect(ui: &Panel) -> Config {
     let mut c = Config::load();
     c.speed = ui.get_speed();
     c.cell = ui.get_cell().round() as u32;
+    c.held = ui.get_held_id() as u32;
+    c.fight = ui.get_fight();
+    c.hp = ui.get_hp().round() as u32;
+    c.dmg = ui.get_dmg().round() as u32;
     c.floor_offset = ui.get_floor_offset().round() as i32;
     c.volume = ui.get_volume();
     c.jump = ui.get_jump();
