@@ -208,6 +208,8 @@ struct Agent {
     cfg: Config,
     /// Item yang sedang dipegang (id; 0 = kosong); bisa diganti dengan tombol pintas.
     held: u32,
+    /// `held` dipilih otomatis saat saling serang (bukan dari pengaturan).
+    auto: bool,
     s: Stick,
     rng: Rng,
     last: Instant,
@@ -248,6 +250,7 @@ impl Agent {
             out,
             cfg,
             held,
+            auto: false,
             s,
             rng,
             last: Instant::now(),
@@ -311,6 +314,9 @@ impl Agent {
         self.s = Stick::new(x);
         self.f = fight::Fighter::new(self.cfg.hp as i32);
         self.f.born = fight::FLASH_T;
+        // hidup lagi: item dari pengaturan; kalau kosong, memilih senjata acak lagi saat bertarung
+        self.held = self.cfg.held;
+        self.auto = false;
         self.hang = None;
         self.win.set_visible(env.shown);
         self.prev.0.clear();
@@ -429,6 +435,16 @@ fn fight_tick(agents: &mut [Agent], arts: &held::Arts, dt: f32, on: bool) {
     let mut hits: Vec<(usize, i32, f32)> = Vec::new();
     for (i, a) in agents.iter_mut().enumerate() {
         a.f.cd = (a.f.cd - dt).max(0.0);
+        // senjata otomatis: tangan kosong -> pilih item acak dari pustaka (hanya saat saling serang)
+        if on && a.held == 0 && !a.cfg.items.is_empty() {
+            let n = a.cfg.items.len();
+            let k = ((a.rng.f() * n as f32) as usize).min(n - 1);
+            a.held = a.cfg.items[k].id;
+            a.auto = true;
+        } else if !on && a.auto {
+            a.held = a.cfg.held;
+            a.auto = false;
+        }
         if !on || !pos[i].1 {
             a.s.goal = None;
             a.f.pending = false;
